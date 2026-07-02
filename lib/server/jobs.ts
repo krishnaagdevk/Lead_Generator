@@ -15,7 +15,7 @@ import { cityToLatLng, pointInPolygon } from "./geocoding";
 import { sendGmail, decryptToken } from "./gmail";
 import { generateDraft } from "./groq";
 import { checkWebsite } from "./ping";
-import { searchNearby, searchText, normalizePlace } from "./places";
+import { searchNearby, searchText, normalizePlace, getPlaceDetails } from "./places";
 import { enqueueJob } from "./queue";
 
 type GeoQuery =
@@ -79,7 +79,17 @@ export async function runSearchJob(jobId: number): Promise<void> {
       reviewCount: number | null; mapsUrl: string | null;
     }> = [];
 
-    for (const raw of rawPlaces) {
+    const newPlacesRaw = rawPlaces.filter((p: any) => p.place_id && !existingIds.has(p.place_id));
+
+    // Fetch place details in parallel for all newly discovered places
+    const detailsPromises = newPlacesRaw.map(async (raw: any) => {
+      const details = await getPlaceDetails(raw.place_id);
+      return { ...raw, ...details };
+    });
+
+    const combinedPlaces = await Promise.all(detailsPromises);
+
+    for (const raw of combinedPlaces) {
       const norm = normalizePlace(raw as Record<string, unknown>);
       if (!norm.placeId || existingIds.has(norm.placeId as string)) continue;
       existingIds.add(norm.placeId as string);

@@ -100,7 +100,15 @@ export function LeadsTable({ leads, loading, selected, onSelectChange, onDeleteO
               <td className="px-4 py-3">
                 <StatusBadge status={lead.websiteStatus} />
                 {lead.websiteUrl && (
-                  <p className="text-xs text-muted mt-1 truncate max-w-[140px]">{lead.websiteUrl}</p>
+                  <a 
+                    href={lead.websiteUrl.startsWith('http') ? lead.websiteUrl : `https://${lead.websiteUrl}`} 
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="block text-xs text-primary hover:underline mt-1 truncate max-w-[140px] cursor-pointer"
+                    title={lead.websiteUrl}
+                  >
+                    {lead.websiteUrl}
+                  </a>
                 )}
               </td>
               <td className="px-4 py-3">

@@ -59,6 +59,33 @@ export async function searchText(businessType: string, location: string): Promis
   return results;
 }
 
+export async function getPlaceDetails(placeId: string): Promise<Record<string, unknown> | null> {
+  const cacheKey = `details:${placeId}`;
+  const cached = await getPlacesCache(cacheKey);
+  if (cached) {
+    return cached as Record<string, unknown>;
+  }
+
+  const p = new URLSearchParams({
+    place_id: placeId,
+    fields: "formatted_phone_number,website",
+    key: PLACES_KEY,
+  });
+
+  try {
+    const res = await fetch(`${BASE}/details/json?${p}`);
+    const data = (await res.json()) as { result?: Record<string, unknown> };
+    const result = data.result ?? null;
+    if (result) {
+      await setPlacesCache(cacheKey, result);
+    }
+    return result;
+  } catch (err) {
+    console.error(`Failed to fetch place details for ${placeId}:`, err);
+    return null;
+  }
+}
+
 export function normalizePlace(place: Record<string, unknown>): Record<string, unknown> {
   const types = (place.types as string[]) ?? [];
   const category =

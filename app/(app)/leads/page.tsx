@@ -18,7 +18,7 @@ export default function LeadsPage() {
   const qc = useQueryClient();
   const [filters, setFilters] = useState<Filters>({});
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(50);
+  const [pageSize, setPageSize] = useState<number | "all">(50);
   const [selected, setSelected] = useState<number[]>([]);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
@@ -75,7 +75,7 @@ export default function LeadsPage() {
   
   const allLeads = fetchedLeads.filter((l: any) => !filters.category || l.category === filters.category);
   const totalLeads = allLeads.length;
-  const paginatedLeads = allLeads.slice((page - 1) * pageSize, page * pageSize);
+  const paginatedLeads = pageSize === "all" ? allLeads : allLeads.slice((page - 1) * pageSize, page * pageSize);
 
   return (
     <div className="flex flex-col h-screen">
@@ -92,7 +92,8 @@ export default function LeadsPage() {
             <select
               value={pageSize}
               onChange={(e) => {
-                setPageSize(Number(e.target.value));
+                const val = e.target.value;
+                setPageSize(val === "all" ? "all" : Number(val));
                 setPage(1);
               }}
               className="h-8 px-2 rounded-md border border-border bg-white text-text font-medium text-xs focus:outline-none focus:ring-2 focus:ring-primary/40 cursor-pointer"
@@ -102,6 +103,7 @@ export default function LeadsPage() {
                   {size} per page
                 </option>
               ))}
+              <option value="all">Show All</option>
             </select>
           </div>
           <div className="flex items-center gap-2">
@@ -131,12 +133,12 @@ export default function LeadsPage() {
         />
       </div>
 
-      {data && totalLeads > pageSize && (
+      {data && pageSize !== "all" && totalLeads > pageSize && (
         <div className="border-t border-border bg-white px-6 py-3 flex items-center justify-between text-sm text-muted">
-          <span>Page {page} of {Math.ceil(totalLeads / pageSize)}</span>
+          <span>Page {page} of {Math.ceil(totalLeads / (pageSize as number))}</span>
           <div className="flex gap-2">
             <button disabled={page === 1} onClick={() => setPage(p => p - 1)} className="px-3 py-1 rounded border border-border disabled:opacity-40 cursor-pointer hover:bg-background transition-colors">Prev</button>
-            <button disabled={page >= Math.ceil(totalLeads / pageSize)} onClick={() => setPage(p => p + 1)} className="px-3 py-1 rounded border border-border disabled:opacity-40 cursor-pointer hover:bg-background transition-colors">Next</button>
+            <button disabled={page >= Math.ceil(totalLeads / (pageSize as number))} onClick={() => setPage(p => p + 1)} className="px-3 py-1 rounded border border-border disabled:opacity-40 cursor-pointer hover:bg-background transition-colors">Next</button>
           </div>
         </div>
       )}
