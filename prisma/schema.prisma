@@ -1,0 +1,236 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Plan {
+  free
+  starter
+  pro
+  agency
+}
+
+enum WebsiteStatus {
+  no_website
+  broken
+  live
+  unknown
+}
+
+enum PipelineStage {
+  new
+  contacted
+  replied
+  negotiating
+  won
+  lost
+}
+
+enum BestContact {
+  email
+  phone
+  social
+}
+
+enum SearchStatus {
+  queued
+  running
+  done
+  failed
+}
+
+enum CampaignStatus {
+  draft
+  scheduled
+  running
+  done
+  paused
+}
+
+enum DraftStatus {
+  pending
+  sent
+  failed
+  skipped
+}
+
+enum EmailLogStatus {
+  sent
+  opened
+  replied
+  bounced
+  unsubscribed
+}
+
+enum SuppressionReason {
+  unsubscribe
+  bounce
+  manual
+  spam_complaint
+}
+
+model User {
+  id               Int            @id @default(autoincrement())
+  email            String         @unique
+  passwordHash     String
+  plan             Plan           @default(free)
+  usageLeads       Int            @default(0)
+  usageAiCalls     Int            @default(0)
+  stripeCustomerId String?
+  createdAt        DateTime       @default(now())
+  searchJobs       SearchJob[]
+  leads            Lead[]
+  emailAccounts    EmailAccount[]
+  campaigns        Campaign[]
+  suppressions     Suppression[]
+}
+
+model SearchJob {
+  id           Int          @id @default(autoincrement())
+  userId       Int
+  businessType String
+  geoQuery     Json
+  status       SearchStatus @default(queued)
+  totalFound   Int          @default(0)
+  error        String?
+  createdAt    DateTime     @default(now())
+  completedAt  DateTime?
+  user         User         @relation(fields: [userId], references: [id])
+  leads        Lead[]
+}
+
+model Lead {
+  id            Int           @id @default(autoincrement())
+  userId        Int
+  searchJobId   Int
+  placeId       String
+  name          String
+  category      String?
+  address       String?
+  phone         String?
+  email         String?
+  websiteUrl    String?
+  websiteStatus WebsiteStatus @default(unknown)
+  socialLinks   Json?
+  bestContact   BestContact?
+  rating        Float?
+  reviewCount   Int?
+  mapsUrl       String?
+  pipelineStage PipelineStage @default(new)
+  notes         String?
+  createdAt     DateTime      @default(now())
+  user          User          @relation(fields: [userId], references: [id])
+  searchJob     SearchJob     @relation(fields: [searchJobId], references: [id])
+  emailDrafts   EmailDraft[]
+  emailLogs     EmailLog[]
+
+  @@index([userId])
+  @@index([searchJobId])
+  @@index([placeId])
+}
+
+model EmailAccount {
+  id                  Int        @id @default(autoincrement())
+  userId              Int
+  gmailAddress        String
+  oauthTokenEncrypted String
+  dailyLimit          Int        @default(100)
+  dailySent           Int        @default(0)
+  isDefault           Boolean    @default(false)
+  lastResetAt         DateTime   @default(now())
+  createdAt           DateTime   @default(now())
+  user                User       @relation(fields: [userId], references: [id])
+  campaigns           Campaign[]
+}
+
+model Suppression {
+  id           Int               @id @default(autoincrement())
+  userId       Int
+  emailAddress String
+  reason       SuppressionReason
+  addedAt      DateTime          @default(now())
+  user         User              @relation(fields: [userId], references: [id])
+
+  @@index([userId, emailAddress])
+}
+
+model Campaign {
+  id              Int            @id @default(autoincrement())
+  userId          Int
+  emailAccountId  Int?
+  name            String
+  templateSubject String
+  templateBody    String
+  status          CampaignStatus @default(draft)
+  scheduledAt     DateTime?
+  followUpDays    Int?
+  followUpCount   Int            @default(0)
+  createdAt       DateTime       @default(now())
+  user            User           @relation(fields: [userId], references: [id])
+  emailAccount    EmailAccount?  @relation(fields: [emailAccountId], references: [id])
+  drafts          EmailDraft[]
+  logs            EmailLog[]
+}
+
+model EmailDraft {
+  id           Int         @id @default(autoincrement())
+  campaignId   Int
+  leadId       Int
+  subject      String
+  body         String
+  editedByUser Boolean     @default(false)
+  status       DraftStatus @default(pending)
+  sentAt       DateTime?
+  createdAt    DateTime    @default(now())
+  campaign     Campaign    @relation(fields: [campaignId], references: [id])
+  lead         Lead        @relation(fields: [leadId], references: [id])
+  logs         EmailLog[]
+}
+
+model EmailLog {
+  id             Int            @id @default(autoincrement())
+  draftId        Int
+  campaignId     Int
+  leadId         Int
+  gmailMessageId String?
+  trackingToken  String?        @unique
+  status         EmailLogStatus @default(sent)
+  sentAt         DateTime       @default(now())
+  openedAt       DateTime?
+  repliedAt      DateTime?
+  bouncedAt      DateTime?
+  draft          EmailDraft     @relation(fields: [draftId], references: [id])
+  campaign       Campaign       @relation(fields: [campaignId], references: [id])
+  lead           Lead           @relation(fields: [leadId], references: [id])
+
+  @@index([trackingToken])
+}
+
+model PlacesCache {
+  key       String   @id
+  response  Json
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([expiresAt])
+}
+
+model JobQueue {
+  id          Int       @id @default(autoincrement())
+  taskType    String
+  payload     Json
+  status      String    @default("pending")
+  error       String?
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(3)
+  runAt       DateTime  @default(now())
+  startedAt   DateTime?
+  finishedAt  DateTime?
+
+  @@index([status, runAt])
+}
+
