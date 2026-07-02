@@ -1,4 +1,6 @@
 import ExcelJS from "exceljs";
+import { google } from "googleapis";
+import { buildOAuthClient, TokenData } from "./gmail";
 
 type LeadRow = Record<string, unknown>;
 
@@ -45,4 +47,53 @@ export async function leadsToXLSX(leads: LeadRow[]): Promise<Buffer> {
 
   const buf = await wb.xlsx.writeBuffer();
   return Buffer.from(buf);
+}
+
+export async function exportLeadsToGoogleSheet(
+  tokenData: TokenData,
+  leads: any[],
+  userPlan?: string
+): Promise<string> {
+  const client = buildOAuthClient();
+  client.setCredentials(tokenData);
+
+  const sheets = google.sheets({ version: "v4", auth: client });
+
+  const title = userPlan === "agency"
+    ? `Leads Export - ${new Date().toLocaleDateString()}`
+    : `LeadHunter Export - ${new Date().toLocaleDateString()}`;
+  const spreadsheet = await sheets.spreadsheets.create({
+    requestBody: {
+      properties: { title },
+    },
+  });
+
+  const spreadsheetId = spreadsheet.data.spreadsheetId;
+  if (!spreadsheetId) throw new Error("Failed to create spreadsheet");
+
+  const values = [
+    ["Name", "Category", "Address", "Phone", "Email", "Website", "Status", "Rating", "Reviews", "Pipeline Stage", "Notes"],
+    ...leads.map((l) => [
+      l.name || "",
+      l.category || "",
+      l.address || "",
+      l.phone || "",
+      l.email || "",
+      l.websiteUrl || "",
+      l.websiteStatus || "",
+      l.rating ? String(l.rating) : "",
+      l.reviewCount ? String(l.reviewCount) : "",
+      l.pipelineStage || "",
+      l.notes || "",
+    ]),
+  ];
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId,
+    range: "Sheet1!A1",
+    valueInputOption: "RAW",
+    requestBody: { values },
+  });
+
+  return spreadsheet.data.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
 }

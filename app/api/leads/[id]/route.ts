@@ -6,7 +6,19 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const session = await getSession();
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { id } = await params;
-  const lead = await prisma.lead.findUnique({ where: { id: Number(id) } });
+  const lead = await prisma.lead.findUnique({
+    where: { id: Number(id) },
+    include: {
+      emailLogs: {
+        include: { campaign: { select: { name: true } } },
+        orderBy: { sentAt: "desc" },
+      },
+      emailDrafts: {
+        include: { campaign: { select: { name: true } } },
+        orderBy: { createdAt: "desc" },
+      },
+    },
+  });
   if (!lead || lead.userId !== session.userId) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json(lead);
 }

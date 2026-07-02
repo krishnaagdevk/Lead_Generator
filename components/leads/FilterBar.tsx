@@ -6,6 +6,8 @@ interface Filters {
   websiteStatus?: string;
   hasEmail?: boolean;
   minRating?: number;
+  minScore?: number;
+  sortBy?: string;
   pipelineStage?: string;
   category?: string;
 }
@@ -95,6 +97,28 @@ export function FilterBar({ filters, categories = [], onChange }: { filters: Fil
         <option value="">Any Rating</option>
         <option value="4">4+ Stars</option>
         <option value="3">3+ Stars</option>
+      </select>
+
+      {/* Lead Score filter */}
+      <select
+        value={filters.minScore ?? ""}
+        onChange={(e) => onChange({ ...filters, minScore: e.target.value ? Number(e.target.value) : undefined })}
+        className="text-xs border border-border rounded-md px-2 py-1 bg-white text-muted focus:outline-none focus:ring-2 focus:ring-primary/40 cursor-pointer"
+      >
+        <option value="">Any Score</option>
+        <option value="80">High Score (80+)</option>
+        <option value="50">Medium Score (50+)</option>
+      </select>
+
+      {/* Sort options */}
+      <select
+        value={filters.sortBy ?? ""}
+        onChange={(e) => onChange({ ...filters, sortBy: e.target.value || undefined })}
+        className="text-xs border border-border rounded-md px-2 py-1 bg-white text-muted focus:outline-none focus:ring-2 focus:ring-primary/40 cursor-pointer"
+      >
+        <option value="">Sort by Date</option>
+        <option value="score">Sort by Score</option>
+        <option value="rating">Sort by Rating</option>
       </select>
 
       {/* Clear filters */}

@@ -1,10 +1,11 @@
-import { Mail, Phone, Apple, Play } from "lucide-react";
+import { Mail, Phone, Apple, Play, MessageCircle } from "lucide-react";
 
 interface ContactBadgeProps {
   email?: string | null;
   phone?: string | null;
   socialLinks?: Record<string, string> | null;
   bestContact?: string | null;
+  emailVerifiedStatus?: string | null;
 }
 
 const FacebookIcon = (props: React.SVGProps<SVGSVGElement>) => (
@@ -37,30 +38,56 @@ const InstagramIcon = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-export function ContactBadge({ email, phone, socialLinks }: ContactBadgeProps) {
+export function ContactBadge({ email, phone, socialLinks, emailVerifiedStatus }: ContactBadgeProps) {
   const hasSocial = socialLinks && Object.keys(socialLinks).length > 0;
 
   return (
     <div className="flex flex-col gap-1.5 py-1">
       {email && (
-        <a
-          href={`mailto:${email}`}
-          title={email}
-          className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 hover:underline transition-colors duration-150"
-        >
-          <Mail className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-          <span className="truncate max-w-[170px] font-medium">{email}</span>
-        </a>
+        <div className="flex flex-col gap-0.5">
+          <a
+            href={`mailto:${email}`}
+            title={email}
+            className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 hover:underline transition-colors duration-150"
+          >
+            <Mail className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+            <span className="truncate max-w-[170px] font-medium">{email}</span>
+          </a>
+          {emailVerifiedStatus && emailVerifiedStatus !== "unverified" && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-semibold pl-5">
+              {emailVerifiedStatus === "valid" ? (
+                <span className="text-emerald-600 flex items-center gap-0.5">● Valid</span>
+              ) : emailVerifiedStatus === "invalid" ? (
+                <span className="text-red-600 flex items-center gap-0.5">● Invalid</span>
+              ) : emailVerifiedStatus === "catchall" ? (
+                <span className="text-amber-600 flex items-center gap-0.5">● Risky</span>
+              ) : null}
+            </span>
+          )}
+        </div>
       )}
       {phone && (
-        <a
-          href={`tel:${phone}`}
-          title={phone}
-          className="inline-flex items-center gap-1.5 text-xs text-green-600 hover:text-green-800 hover:underline transition-colors duration-150"
-        >
-          <Phone className="w-3.5 h-3.5 text-green-500 shrink-0" />
-          <span className="font-medium">{phone}</span>
-        </a>
+        <div className="flex items-center gap-2">
+          <a
+            href={`tel:${phone}`}
+            title={phone}
+            className="inline-flex items-center gap-1.5 text-xs text-green-600 hover:text-green-800 hover:underline transition-colors duration-150"
+          >
+            <Phone className="w-3.5 h-3.5 text-green-500 shrink-0" />
+            <span className="font-medium">{phone}</span>
+          </a>
+          <span className="text-muted/30">|</span>
+          <a
+            href={`https://wa.me/${phone.replace(/[^0-9]/g, "")}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 hover:text-emerald-800 hover:underline transition-colors duration-150 cursor-pointer"
+            title="Send WhatsApp Message"
+          >
+            <MessageCircle className="w-3 h-3 text-emerald-500" />
+            WhatsApp
+          </a>
+        </div>
       )}
       {hasSocial && (
         <div className="flex flex-col gap-1.5">

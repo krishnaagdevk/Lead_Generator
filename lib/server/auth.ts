@@ -40,3 +40,12 @@ export async function requireSession(): Promise<{ userId: number }> {
 export function getTokenFromRequest(req: NextRequest): string | null {
   return req.cookies.get("token")?.value ?? null;
 }
+
+export async function getTenantUserId(userId: number): Promise<number> {
+  const { prisma } = await import("../db");
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { parentId: true },
+  });
+  return user?.parentId || userId;
+}

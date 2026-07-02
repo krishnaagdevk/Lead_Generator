@@ -73,6 +73,12 @@ enum SuppressionReason {
   spam_complaint
 }
 
+enum WarmupStatus {
+  inactive
+  active
+  completed
+}
+
 model User {
   id               Int            @id @default(autoincrement())
   email            String         @unique
@@ -81,12 +87,17 @@ model User {
   usageLeads       Int            @default(0)
   usageAiCalls     Int            @default(0)
   stripeCustomerId String?
+  parentId         Int?
+  role             String         @default("owner")
   createdAt        DateTime       @default(now())
+  parent           User?          @relation("TeamMembers", fields: [parentId], references: [id])
+  teamMembers      User[]         @relation("TeamMembers")
   searchJobs       SearchJob[]
   leads            Lead[]
   emailAccounts    EmailAccount[]
   campaigns        Campaign[]
   suppressions     Suppression[]
+  savedSearches    SavedSearch[]
 }
 
 model SearchJob {
@@ -103,30 +114,40 @@ model SearchJob {
   leads        Lead[]
 }
 
+enum EmailVerifiedStatus {
+  unverified
+  valid
+  invalid
+  catchall
+}
+
 model Lead {
-  id            Int           @id @default(autoincrement())
-  userId        Int
-  searchJobId   Int
-  placeId       String
-  name          String
-  category      String?
-  address       String?
-  phone         String?
-  email         String?
-  websiteUrl    String?
-  websiteStatus WebsiteStatus @default(unknown)
-  socialLinks   Json?
-  bestContact   BestContact?
-  rating        Float?
-  reviewCount   Int?
-  mapsUrl       String?
-  pipelineStage PipelineStage @default(new)
-  notes         String?
-  createdAt     DateTime      @default(now())
-  user          User          @relation(fields: [userId], references: [id])
-  searchJob     SearchJob     @relation(fields: [searchJobId], references: [id])
-  emailDrafts   EmailDraft[]
-  emailLogs     EmailLog[]
+  id                  Int                 @id @default(autoincrement())
+  userId              Int
+  searchJobId         Int
+  placeId             String
+  name                String
+  category            String?
+  address             String?
+  phone               String?
+  email               String?
+  emailVerifiedStatus EmailVerifiedStatus @default(unverified)
+  emailVerifiedAt     DateTime?
+  leadScore           Int                 @default(0)
+  websiteUrl          String?
+  websiteStatus       WebsiteStatus       @default(unknown)
+  socialLinks         Json?
+  bestContact         BestContact?
+  rating              Float?
+  reviewCount         Int?
+  mapsUrl             String?
+  pipelineStage       PipelineStage       @default(new)
+  notes               String?
+  createdAt           DateTime            @default(now())
+  user                User                @relation(fields: [userId], references: [id])
+  searchJob           SearchJob           @relation(fields: [searchJobId], references: [id])
+  emailDrafts         EmailDraft[]
+  emailLogs           EmailLog[]
 
   @@index([userId])
   @@index([searchJobId])
@@ -134,16 +155,19 @@ model Lead {
 }
 
 model EmailAccount {
-  id                  Int        @id @default(autoincrement())
+  id                  Int          @id @default(autoincrement())
   userId              Int
   gmailAddress        String
   oauthTokenEncrypted String
-  dailyLimit          Int        @default(100)
-  dailySent           Int        @default(0)
-  isDefault           Boolean    @default(false)
-  lastResetAt         DateTime   @default(now())
-  createdAt           DateTime   @default(now())
-  user                User       @relation(fields: [userId], references: [id])
+  dailyLimit          Int          @default(100)
+  dailySent           Int          @default(0)
+  isDefault           Boolean      @default(false)
+  lastResetAt         DateTime     @default(now())
+  warmupStatus        WarmupStatus @default(inactive)
+  warmupDay           Int          @default(1)
+  warmupStartDate     DateTime?
+  createdAt           DateTime     @default(now())
+  user                User         @relation(fields: [userId], references: [id])
   campaigns           Campaign[]
 }
 
@@ -192,20 +216,23 @@ model EmailDraft {
 }
 
 model EmailLog {
-  id             Int            @id @default(autoincrement())
-  draftId        Int
-  campaignId     Int
-  leadId         Int
-  gmailMessageId String?
-  trackingToken  String?        @unique
-  status         EmailLogStatus @default(sent)
-  sentAt         DateTime       @default(now())
-  openedAt       DateTime?
-  repliedAt      DateTime?
-  bouncedAt      DateTime?
-  draft          EmailDraft     @relation(fields: [draftId], references: [id])
-  campaign       Campaign       @relation(fields: [campaignId], references: [id])
-  lead           Lead           @relation(fields: [leadId], references: [id])
+  id                     Int            @id @default(autoincrement())
+  draftId                Int
+  campaignId             Int
+  leadId                 Int
+  gmailMessageId         String?
+  trackingToken          String?        @unique
+  status                 EmailLogStatus @default(sent)
+  sentAt                 DateTime       @default(now())
+  openedAt               DateTime?
+  repliedAt              DateTime?
+  bouncedAt              DateTime?
+  replyBody              String?
+  replyClassification    String?
+  replySuggestedResponse String?
+  draft                  EmailDraft     @relation(fields: [draftId], references: [id])
+  campaign               Campaign       @relation(fields: [campaignId], references: [id])
+  lead                   Lead           @relation(fields: [leadId], references: [id])
 
   @@index([trackingToken])
 }
@@ -232,5 +259,15 @@ model JobQueue {
   finishedAt  DateTime?
 
   @@index([status, runAt])
+}
+
+model SavedSearch {
+  id           Int      @id @default(autoincrement())
+  userId       Int
+  name         String
+  businessType String
+  geoQuery     Json
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id])
 }
 

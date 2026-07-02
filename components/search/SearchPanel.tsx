@@ -3,7 +3,7 @@
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Search, MapPin, Globe, Pencil, Building2 } from "lucide-react";
+import { Loader2, Search, MapPin, Globe, Pencil, Building2, Trash2, AlertCircle } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { MapView } from "./MapView";
@@ -61,6 +61,71 @@ export function SearchPanel() {
   const [polygon, setPolygon] = useState<Array<{ lat: number; lng: number }>>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
+  const { data: savedSearches, refetch: refetchSaved } = useQuery<any[]>({
+    queryKey: ["saved-searches"],
+    queryFn: () => fetch("/api/saved-searches").then((r) => r.json()),
+  });
+
+  const saveSearchMutation = useMutation({
+    mutationFn: async (name: string) => {
+      let geoQuery: Record<string, unknown>;
+      if (tab === "radius") {
+        if (!center) throw new Error("Click on the map to set location");
+        geoQuery = { mode: "radius", lat: center.lat, lng: center.lng, radius_km: radiusKm, unit };
+      } else if (tab === "city") {
+        if (!city.trim()) throw new Error("Enter a city name");
+        geoQuery = { mode: "city", city: city.trim() };
+      } else if (tab === "polygon") {
+        if (polygon.length < 3) throw new Error("Draw an area on the map");
+        geoQuery = { mode: "polygon", coords: polygon };
+      } else {
+        if (cities.length === 0) throw new Error("Add at least one city");
+        geoQuery = { mode: "multi_city", cities };
+      }
+
+      const res = await fetch("/api/saved-searches", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, businessType: businessType.trim(), geoQuery }),
+      });
+      if (!res.ok) throw new Error("Failed to save search preset");
+      return res.json();
+    },
+    onSuccess: () => {
+      refetchSaved();
+    },
+    onError: (err) => alert(err instanceof Error ? err.message : "Failed to save preset"),
+  });
+
+  const deleteSavedMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const res = await fetch(`/api/saved-searches/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete saved search");
+      return res.json();
+    },
+    onSuccess: () => {
+      refetchSaved();
+    },
+    onError: (err) => alert(err instanceof Error ? err.message : "Failed to delete preset"),
+  });
+
+  const loadSavedSearch = (saved: any) => {
+    setBusinessType(saved.businessType);
+    const gq = saved.geoQuery;
+    setTab(gq.mode);
+    if (gq.mode === "radius") {
+      setCenter({ lat: gq.lat, lng: gq.lng });
+      setRadiusKm(gq.radius_km);
+      if (gq.unit) setUnit(gq.unit);
+    } else if (gq.mode === "city") {
+      setCity(gq.city);
+    } else if (gq.mode === "polygon") {
+      setPolygon(gq.coords);
+    } else if (gq.mode === "multi_city") {
+      setCities(gq.cities);
+    }
+  };
+
   useEffect(() => {
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
@@ -90,11 +155,11 @@ export function SearchPanel() {
   });
 
   useEffect(() => {
-    if (jobStatus?.status === "done") {
+    if (jobStatus?.status === "done" && !jobStatus?.error) {
       qc.invalidateQueries({ queryKey: ["leads"] });
       router.push("/leads");
     }
-  }, [jobStatus?.status, qc, router]);
+  }, [jobStatus?.status, jobStatus?.error, qc, router]);
 
   const startSearch = useMutation({
     mutationFn: async () => {
@@ -133,9 +198,9 @@ export function SearchPanel() {
   );
 
   return (
-    <div className="flex h-full">
+    <div className="flex flex-col md:flex-row h-[calc(100vh-3.5rem)] md:h-screen">
       {/* Left Panel */}
-      <div className="w-80 shrink-0 bg-white border-r border-border flex flex-col overflow-y-auto">
+      <div className="w-full md:w-80 shrink-0 bg-white border-b md:border-b-0 md:border-r border-border flex flex-col overflow-y-auto max-h-[50vh] md:max-h-full">
         <div className="p-4 flex flex-col gap-4">
           <div className="relative">
             <Input
@@ -320,6 +385,13 @@ export function SearchPanel() {
             </div>
           )}
 
+          {jobStatus?.status === "done" && jobStatus?.error && (
+            <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-3">
+              <AlertCircle className="w-4.5 h-4.5 shrink-0 text-amber-500 mt-0.5" />
+              <span>{jobStatus.error}</span>
+            </div>
+          )}
+
           <Button
             className="w-full"
             loading={startSearch.isPending || isRunning}
@@ -329,11 +401,54 @@ export function SearchPanel() {
             <Search className="w-4 h-4" />
             {isRunning ? "Searching..." : "Search"}
           </Button>
+
+          <Button
+            variant="secondary"
+            className="w-full mt-1 border-dashed"
+            disabled={!businessType.trim() || isRunning}
+            onClick={() => {
+              const name = prompt("Enter a name for this search preset:");
+              if (name?.trim()) saveSearchMutation.mutate(name.trim());
+            }}
+          >
+            Save Preset Template
+          </Button>
+
+          {savedSearches && savedSearches.length > 0 && (
+            <div className="mt-4 border-t border-border pt-4">
+              <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Saved Search Presets</p>
+              <div className="flex flex-col gap-1.5">
+                {savedSearches.map((s: any) => (
+                  <div key={s.id} className="flex items-center justify-between gap-2 p-2 rounded-md border border-border hover:bg-background/50 transition-colors duration-150">
+                    <button
+                      type="button"
+                      onClick={() => loadSavedSearch(s)}
+                      className="flex-1 text-left text-xs font-medium text-text hover:text-primary transition-colors cursor-pointer truncate"
+                      title={`Load: ${s.name} (${s.businessType})`}
+                    >
+                      <div className="font-semibold truncate">{s.name}</div>
+                      <div className="text-[10px] text-muted truncate mt-0.5">{s.businessType} • {s.geoQuery?.mode}</div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm(`Delete preset "${s.name}"?`)) deleteSavedMutation.mutate(s.id);
+                      }}
+                      className="text-muted hover:text-red-500 cursor-pointer p-1"
+                      title="Delete Preset"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Map */}
-      <div className="flex-1">
+      <div className="flex-1 h-[50vh] md:h-full min-h-[300px]">
         <MapView
           mode={tab}
           center={center}

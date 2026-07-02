@@ -3,6 +3,7 @@
 import { LeadsTable } from "@/components/leads/LeadsTable";
 import { FilterBar } from "@/components/leads/FilterBar";
 import { ExportMenu } from "@/components/leads/ExportMenu";
+import { LeadDetailDrawer } from "@/components/leads/LeadDetailDrawer";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
@@ -10,6 +11,8 @@ interface Filters {
   websiteStatus?: string;
   hasEmail?: boolean;
   minRating?: number;
+  minScore?: number;
+  sortBy?: string;
   pipelineStage?: string;
   category?: string;
 }
@@ -21,11 +24,14 @@ export default function LeadsPage() {
   const [pageSize, setPageSize] = useState<number | "all">(50);
   const [selected, setSelected] = useState<number[]>([]);
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+  const [selectedLeadId, setSelectedLeadId] = useState<number | null>(null);
 
   const params = new URLSearchParams();
   if (filters.websiteStatus) params.set("websiteStatus", filters.websiteStatus);
   if (filters.hasEmail !== undefined) params.set("hasEmail", String(filters.hasEmail));
   if (filters.minRating) params.set("minRating", String(filters.minRating));
+  if (filters.minScore) params.set("minScore", String(filters.minScore));
+  if (filters.sortBy) params.set("sortBy", filters.sortBy);
   if (filters.pipelineStage) params.set("pipelineStage", filters.pipelineStage);
 
   const { data, isLoading } = useQuery({
@@ -79,14 +85,14 @@ export default function LeadsPage() {
 
   return (
     <div className="flex flex-col h-screen">
-      <div className="px-6 py-4 border-b border-border bg-white flex items-center justify-between gap-4">
+      <div className="px-6 py-4 border-b border-border bg-white flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 shrink-0">
         <div>
           <h1 className="text-xl font-bold text-text">Leads</h1>
           <p className="text-sm text-muted mt-0.5">
             {totalLeads} total leads
           </p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-1.5 text-xs text-muted">
             <span>Show:</span>
             <select
@@ -130,6 +136,7 @@ export default function LeadsPage() {
           selected={selected}
           onSelectChange={setSelected}
           onDeleteOne={handleDeleteOne}
+          onRowClick={(id) => setSelectedLeadId(id)}
         />
       </div>
 
@@ -142,6 +149,11 @@ export default function LeadsPage() {
           </div>
         </div>
       )}
+
+      <LeadDetailDrawer
+        leadId={selectedLeadId}
+        onClose={() => setSelectedLeadId(null)}
+      />
     </div>
   );
 }

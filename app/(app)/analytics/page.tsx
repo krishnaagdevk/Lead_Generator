@@ -1,7 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { Loader2, TrendingUp } from "lucide-react";
+import { Loader2, TrendingUp, FileText } from "lucide-react";
+import Link from "next/link";
 
 interface Campaign { id: number; name: string; status: string; createdAt: string; }
 interface Stats { campaignId: number; sent: number; opened: number; replied: number; bounced: number; }
@@ -40,9 +41,17 @@ function CampaignStats({ campaign }: { campaign: Campaign }) {
           <h3 className="font-semibold text-text">{campaign.name}</h3>
           <p className="text-xs text-muted mt-0.5">{new Date(campaign.createdAt).toLocaleDateString()}</p>
         </div>
-        <span className={`text-xs font-medium rounded-full px-2 py-0.5 ${campaign.status === "done" ? "bg-emerald-100 text-emerald-700" : campaign.status === "running" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600"}`}>
-          {campaign.status}
-        </span>
+        <div className="flex items-center gap-3">
+          <Link
+            href={`/campaigns/${campaign.id}/report`}
+            className="inline-flex items-center gap-1 text-xs text-primary hover:underline font-semibold cursor-pointer"
+          >
+            <FileText className="w-3.5 h-3.5" /> PDF Report
+          </Link>
+          <span className={`text-xs font-medium rounded-full px-2 py-0.5 ${campaign.status === "done" ? "bg-emerald-100 text-emerald-700" : campaign.status === "running" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-600"}`}>
+            {campaign.status}
+          </span>
+        </div>
       </div>
       <div className="flex flex-col gap-3">
         <FunnelBar label="Sent" value={data.sent} max={max} color="#6366f1" />

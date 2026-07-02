@@ -9,14 +9,18 @@ import {
   EmailLogStatus,
   CampaignStatus,
   SearchStatus,
+  EmailVerifiedStatus,
+  WarmupStatus,
 } from "../generated/prisma/enums";
 import { extractContactInfo } from "./crawler";
 import { cityToLatLng, pointInPolygon } from "./geocoding";
-import { sendGmail, decryptToken } from "./gmail";
-import { generateDraft } from "./groq";
+import { sendGmail, decryptToken, checkReplyForMessage, getReplyMessageBodyAndDetails } from "./gmail";
+import { generateDraft, analyzeReply } from "./groq";
 import { checkWebsite } from "./ping";
 import { searchNearby, searchText, normalizePlace, getPlaceDetails } from "./places";
 import { enqueueJob } from "./queue";
+import { verifyEmail } from "./verification";
+import { calculateScore } from "./scoring";
 
 type GeoQuery =
   | { mode: "radius"; lat: number; lng: number; radius_km: number }
@@ -32,6 +36,31 @@ export async function runSearchJob(jobId: number): Promise<void> {
 
     const job = await prisma.searchJob.findUnique({ where: { id: jobId } });
     if (!job) return;
+
+    const user = await prisma.user.findUnique({ where: { id: job.userId } });
+    if (!user) return;
+
+    const PLAN_LIMITS: Record<string, number> = {
+      free: 50,
+      starter: 1000,
+      pro: 10000,
+      agency: 99999,
+    };
+    const maxLeads = PLAN_LIMITS[user.plan] ?? PLAN_LIMITS.free;
+    const remainingLeads = Math.max(0, maxLeads - user.usageLeads);
+
+    if (remainingLeads <= 0) {
+      await prisma.searchJob.update({
+        where: { id: jobId },
+        data: {
+          status: SearchStatus.done,
+          totalFound: 0,
+          completedAt: new Date(),
+          error: "Plan limit reached. Upgrade to fetch more leads.",
+        },
+      });
+      return;
+    }
 
     const gq = job.geoQuery as GeoQuery;
     let rawPlaces: unknown[] = [];
@@ -90,6 +119,7 @@ export async function runSearchJob(jobId: number): Promise<void> {
     const combinedPlaces = await Promise.all(detailsPromises);
 
     for (const raw of combinedPlaces) {
+      if (count >= remainingLeads) break;
       const norm = normalizePlace(raw as Record<string, unknown>);
       if (!norm.placeId || existingIds.has(norm.placeId as string)) continue;
       existingIds.add(norm.placeId as string);
@@ -112,9 +142,19 @@ export async function runSearchJob(jobId: number): Promise<void> {
     }
 
     await prisma.lead.createMany({ data: newLeads });
+    await prisma.user.update({
+      where: { id: job.userId },
+      data: { usageLeads: { increment: newLeads.length } },
+    });
+
     await prisma.searchJob.update({
       where: { id: jobId },
-      data: { status: SearchStatus.done, totalFound: count, completedAt: new Date() },
+      data: { 
+        status: SearchStatus.done, 
+        totalFound: count, 
+        completedAt: new Date(),
+        ...(count >= remainingLeads && { error: "Plan quota limit reached during search. Upgrade to fetch more leads." }),
+      },
     });
 
     const leads = await prisma.lead.findMany({
@@ -152,6 +192,10 @@ export async function pingLead(leadId: number): Promise<void> {
 
   if (status === WebsiteStatus.live && !updatedLead.email) {
     await enqueueJob("crawl", { leadId });
+  } else if (updatedLead.email) {
+    await enqueueJob("verify_email", { leadId });
+  } else {
+    await enqueueJob("calculate_score", { leadId });
   }
 }
 
@@ -170,7 +214,7 @@ export async function crawlLead(leadId: number): Promise<void> {
     ? BestContact.social
     : null;
 
-  await prisma.lead.update({
+  const updatedLead = await prisma.lead.update({
     where: { id: leadId },
     data: {
       email: info.email ?? lead.email,
@@ -178,6 +222,12 @@ export async function crawlLead(leadId: number): Promise<void> {
       ...(bestContact && { bestContact }),
     },
   });
+
+  if (updatedLead.email) {
+    await enqueueJob("verify_email", { leadId });
+  } else {
+    await enqueueJob("calculate_score", { leadId });
+  }
 }
 
 // ── AI Drafts ─────────────────────────────────────────────────────────────────
@@ -188,7 +238,23 @@ export async function generateCampaignDrafts(campaignId: number): Promise<void> 
     include: { lead: true },
   });
 
+  const campaign = await prisma.campaign.findUnique({ where: { id: campaignId } });
+  if (!campaign) return;
+  const user = await prisma.user.findUnique({ where: { id: campaign.userId } });
+  if (!user) return;
+
+  const PLAN_AI_LIMITS: Record<string, number> = {
+    free: 0,
+    starter: 500,
+    pro: 5000,
+    agency: 99999,
+  };
+  const maxAi = PLAN_AI_LIMITS[user.plan] ?? PLAN_AI_LIMITS.free;
+  const remainingAi = Math.max(0, maxAi - user.usageAiCalls);
+
+  let generatedCount = 0;
   for (const draft of drafts) {
+    if (generatedCount >= remainingAi) break;
     try {
       const city = draft.lead.address?.split(",").slice(-2, -1)[0]?.trim() ?? "";
       const result = await generateDraft({
@@ -196,6 +262,8 @@ export async function generateCampaignDrafts(campaignId: number): Promise<void> 
         category: draft.lead.category,
         city,
         websiteStatus: draft.lead.websiteStatus,
+        rating: draft.lead.rating,
+        reviewCount: draft.lead.reviewCount,
       });
       await prisma.emailDraft.update({
         where: { id: draft.id },
@@ -205,6 +273,7 @@ export async function generateCampaignDrafts(campaignId: number): Promise<void> 
         where: { id: draft.lead.userId },
         data: { usageAiCalls: { increment: 1 } },
       });
+      generatedCount++;
     } catch {
       continue;
     }
@@ -212,6 +281,50 @@ export async function generateCampaignDrafts(campaignId: number): Promise<void> 
 }
 
 // ── Bulk Send ─────────────────────────────────────────────────────────────────
+
+export async function getEffectiveDailyLimit(account: {
+  dailyLimit: number;
+  warmupStatus: WarmupStatus;
+  warmupDay: number;
+}): Promise<number> {
+  if (account.warmupStatus === WarmupStatus.active) {
+    return Math.min(account.dailyLimit, 5 + (account.warmupDay - 1) * 5);
+  }
+  return account.dailyLimit;
+}
+
+export async function checkAndResetDailyLimit(accountId: number): Promise<any> {
+  const account = await prisma.emailAccount.findUnique({ where: { id: accountId } });
+  if (!account) return null;
+
+  const now = new Date();
+  const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+  if (account.lastResetAt < oneDayAgo) {
+    let newWarmupDay = account.warmupDay;
+    let newWarmupStatus = account.warmupStatus;
+
+    if (account.warmupStatus === WarmupStatus.active) {
+      newWarmupDay += 1;
+      const nextLimit = 5 + (newWarmupDay - 1) * 5;
+      if (nextLimit >= account.dailyLimit) {
+        newWarmupStatus = WarmupStatus.completed;
+      }
+    }
+
+    return prisma.emailAccount.update({
+      where: { id: accountId },
+      data: {
+        dailySent: 0,
+        lastResetAt: now,
+        warmupDay: newWarmupDay,
+        warmupStatus: newWarmupStatus,
+      },
+    });
+  }
+
+  return account;
+}
 
 export async function sendCampaign(campaignId: number): Promise<void> {
   const campaign = await prisma.campaign.findUnique({
@@ -239,8 +352,11 @@ export async function sendCampaign(campaignId: number): Promise<void> {
       continue;
     }
 
-    const account = await prisma.emailAccount.findUnique({ where: { id: campaign.emailAccount.id } });
-    if (!account || account.dailySent >= account.dailyLimit) break;
+    const account = await checkAndResetDailyLimit(campaign.emailAccount.id);
+    if (!account) break;
+
+    const effectiveLimit = await getEffectiveDailyLimit(account);
+    if (account.dailySent >= effectiveLimit) break;
 
     try {
       const token = crypto.randomUUID().replace(/-/g, "");
@@ -270,4 +386,175 @@ export async function sendCampaign(campaignId: number): Promise<void> {
   }
 
   await prisma.campaign.update({ where: { id: campaignId }, data: { status: CampaignStatus.done } });
+
+  if (campaign.followUpDays && campaign.followUpCount === 0) {
+    const delaySeconds = campaign.followUpDays * 24 * 60 * 60;
+    await enqueueJob("send_follow_up", { campaignId }, delaySeconds);
+  }
+}
+
+export async function verifyLeadEmail(leadId: number): Promise<void> {
+  const lead = await prisma.lead.findUnique({ where: { id: leadId } });
+  if (!lead || !lead.email) {
+    await enqueueJob("calculate_score", { leadId });
+    return;
+  }
+
+  const verifiedStatus = await verifyEmail(lead.email);
+
+  const isEmailValid = verifiedStatus === EmailVerifiedStatus.valid || verifiedStatus === EmailVerifiedStatus.catchall;
+  const bestContact = isEmailValid
+    ? BestContact.email
+    : lead.phone
+    ? BestContact.phone
+    : lead.socialLinks
+    ? BestContact.social
+    : null;
+
+  await prisma.lead.update({
+    where: { id: leadId },
+    data: {
+      emailVerifiedStatus: verifiedStatus,
+      emailVerifiedAt: new Date(),
+      ...(bestContact && { bestContact }),
+    },
+  });
+
+  await enqueueJob("calculate_score", { leadId });
+}
+
+export async function calculateLeadScore(leadId: number): Promise<void> {
+  const lead = await prisma.lead.findUnique({ where: { id: leadId } });
+  if (!lead) return;
+
+  const score = calculateScore(lead);
+
+  await prisma.lead.update({
+    where: { id: leadId },
+    data: { leadScore: score },
+  });
+}
+
+export async function checkAllCampaignReplies(): Promise<void> {
+  const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
+  const pendingLogs = await prisma.emailLog.findMany({
+    where: {
+      status: { in: [EmailLogStatus.sent, EmailLogStatus.opened] },
+      sentAt: { gte: fourteenDaysAgo },
+      gmailMessageId: { not: null },
+    },
+    include: {
+      campaign: {
+        include: { emailAccount: true },
+      },
+      lead: true,
+    },
+  });
+
+  for (const log of pendingLogs) {
+    if (!log.campaign.emailAccount || !log.gmailMessageId || !log.lead.email) continue;
+
+    const tokenData = decryptToken(log.campaign.emailAccount.oauthTokenEncrypted);
+    const replyDetails = await getReplyMessageBodyAndDetails(tokenData, log.gmailMessageId, log.lead.email);
+
+    if (replyDetails) {
+      let classification = "interested";
+      let suggestedResponse = "";
+      try {
+        const analysis = await analyzeReply(replyDetails.body);
+        classification = analysis.classification;
+        suggestedResponse = analysis.suggestedResponse;
+      } catch (e) {
+        console.error("AI Reply Analysis failed:", e);
+      }
+
+      await prisma.$transaction([
+        prisma.emailLog.update({
+          where: { id: log.id },
+          data: { 
+            status: EmailLogStatus.replied, 
+            repliedAt: new Date(),
+            replyBody: replyDetails.body,
+            replyClassification: classification,
+            replySuggestedResponse: suggestedResponse,
+          },
+        }),
+        prisma.lead.update({
+          where: { id: log.leadId },
+          data: { pipelineStage: PipelineStage.replied },
+        }),
+      ]);
+    }
+  }
+
+  // Re-enqueue next check in 60 seconds
+  await enqueueJob("check_replies", {}, 60);
+}
+
+export async function sendFollowUpCampaign(campaignId: number): Promise<void> {
+  const campaign = await prisma.campaign.findUnique({
+    where: { id: campaignId },
+    include: { emailAccount: true },
+  });
+  if (!campaign || !campaign.emailAccount || !campaign.followUpDays) return;
+
+  const logs = await prisma.emailLog.findMany({
+    where: {
+      campaignId,
+      status: { in: [EmailLogStatus.sent, EmailLogStatus.opened] },
+      lead: {
+        pipelineStage: { in: [PipelineStage.contacted] },
+      },
+    },
+    include: { lead: true },
+  });
+
+  const tokenData = decryptToken(campaign.emailAccount.oauthTokenEncrypted);
+
+  for (const log of logs) {
+    if (!log.lead.email) continue;
+
+    const suppressed = await prisma.suppression.findFirst({
+      where: { userId: campaign.userId, emailAddress: log.lead.email },
+    });
+    if (suppressed) continue;
+
+    const account = await checkAndResetDailyLimit(campaign.emailAccount.id);
+    if (!account) break;
+
+    const effectiveLimit = await getEffectiveDailyLimit(account);
+    if (account.dailySent >= effectiveLimit) break;
+
+    try {
+      const token = crypto.randomUUID().replace(/-/g, "");
+      const pixelUrl = `${process.env.NEXT_PUBLIC_APP_URL}/api/track/${token}/open.png`;
+
+      const subject = `Re: ${campaign.templateSubject}`;
+      const body = `Hi ${log.lead.name},\n\nFollowing up on my previous email. Just wanted to see if you had a chance to read it and if you are interested in a new website or redesign for your business?\n\nBest regards,\n`;
+
+      const msgId = await sendGmail(tokenData, log.lead.email, subject, body, pixelUrl);
+
+      await prisma.$transaction([
+        prisma.emailLog.create({
+          data: {
+            draftId: log.draftId, campaignId, leadId: log.leadId,
+            gmailMessageId: msgId, trackingToken: token, status: EmailLogStatus.sent,
+          },
+        }),
+        prisma.emailAccount.update({
+          where: { id: campaign.emailAccount.id },
+          data: { dailySent: { increment: 1 } },
+        }),
+      ]);
+
+      await new Promise((r) => setTimeout(r, 1500));
+    } catch (err) {
+      console.error("Failed to send follow up to", log.lead.email, err);
+    }
+  }
+
+  await prisma.campaign.update({
+    where: { id: campaignId },
+    data: { followUpCount: { increment: 1 } },
+  });
 }

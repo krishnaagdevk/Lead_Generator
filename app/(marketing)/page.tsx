@@ -19,7 +19,7 @@ export default function LandingPage() {
   return (
     <div className="min-h-screen" style={{ backgroundColor: "var(--color-background)" }}>
       {/* Nav */}
-      <nav className="flex items-center justify-between px-8 py-4 border-b border-border bg-white">
+      <nav className="flex items-center justify-between px-4 md:px-8 py-4 border-b border-border bg-white">
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 rounded-md flex items-center justify-center" style={{ backgroundColor: "var(--color-primary)" }}>
             <svg viewBox="0 0 24 24" className="w-4 h-4 stroke-white fill-none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -31,21 +31,21 @@ export default function LandingPage() {
         </div>
         <div className="flex items-center gap-3">
           <Link href="/login" className="text-sm text-muted hover:text-text transition-colors">Sign in</Link>
-          <Link href="/signup" className="text-sm font-medium text-white px-4 py-2 rounded-md transition-colors" style={{ backgroundColor: "var(--color-primary)" }}>
+          <Link href="/signup" className="text-sm font-medium text-white px-3 py-1.5 md:px-4 md:py-2 rounded-md transition-colors" style={{ backgroundColor: "var(--color-primary)" }}>
             Get started free
           </Link>
         </div>
       </nav>
 
       {/* Hero */}
-      <section className="text-center px-6 py-24 max-w-4xl mx-auto">
+      <section className="text-center px-6 py-16 md:py-24 max-w-4xl mx-auto">
         <div className="inline-flex items-center gap-2 bg-primary/10 text-primary text-sm font-medium rounded-full px-4 py-1.5 mb-6">
           <Sparkles className="w-3.5 h-3.5" /> AI-powered cold outreach for web designers
         </div>
-        <h1 className="text-5xl font-bold text-text leading-tight mb-5">
+        <h1 className="text-3xl md:text-5xl font-bold text-text leading-tight mb-5">
           Find businesses that<br />need a website.<br /><span style={{ color: "var(--color-primary)" }}>Email them in one click.</span>
         </h1>
-        <p className="text-xl text-muted mb-8 max-w-2xl mx-auto">
+        <p className="text-base md:text-xl text-muted mb-8 max-w-2xl mx-auto">
           Type a business type and area → get a filtered list of local businesses without websites → Groq AI writes personalized cold emails → send from your own Gmail.
         </p>
         <div className="flex items-center justify-center gap-3">

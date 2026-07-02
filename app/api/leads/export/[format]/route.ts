@@ -11,12 +11,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ form
   const sp = req.nextUrl.searchParams;
   const searchJobId = sp.get("searchJobId") ? Number(sp.get("searchJobId")) : undefined;
   const websiteStatus = sp.get("websiteStatus") ?? undefined;
+  const idsStr = sp.get("ids");
+  const ids = idsStr ? idsStr.split(",").map(Number) : undefined;
 
   const leads = await prisma.lead.findMany({
     where: {
       userId: session.userId,
       ...(searchJobId && { searchJobId }),
       ...(websiteStatus && { websiteStatus: websiteStatus as never }),
+      ...(ids && ids.length > 0 && { id: { in: ids } }),
     },
   });
 

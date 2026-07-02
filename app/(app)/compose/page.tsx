@@ -70,9 +70,9 @@ export default function ComposePage() {
   const sentDrafts = drafts?.filter(d => d.status === "sent") ?? [];
 
   return (
-    <div className="flex h-screen">
+    <div className="flex flex-col md:flex-row h-[calc(100vh-3.5rem)] md:h-screen">
       {/* Left: Lead selection or campaign setup */}
-      <div className="w-72 shrink-0 border-r border-border bg-white flex flex-col">
+      <div className="w-full md:w-72 shrink-0 border-b md:border-b-0 md:border-r border-border bg-white flex flex-col max-h-[40vh] md:max-h-full">
         <div className="p-4 border-b border-border">
           <h2 className="font-semibold text-text">Compose Campaign</h2>
         </div>
@@ -157,7 +157,7 @@ export default function ComposePage() {
       </div>
 
       {/* Right: Draft editor */}
-      <div className="flex-1 flex flex-col bg-background">
+      <div className="flex-1 flex flex-col bg-background h-[60vh] md:h-full overflow-hidden">
         {activeDraft ? (
           <DraftEditor
             key={activeDraft.id}

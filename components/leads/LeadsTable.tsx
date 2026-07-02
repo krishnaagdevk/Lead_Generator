@@ -13,6 +13,8 @@ interface Lead {
   address: string | null;
   phone: string | null;
   email: string | null;
+  emailVerifiedStatus: string;
+  leadScore: number;
   websiteUrl: string | null;
   websiteStatus: string;
   socialLinks: Record<string, string> | null;
@@ -29,9 +31,23 @@ interface LeadsTableProps {
   selected: number[];
   onSelectChange: (ids: number[]) => void;
   onDeleteOne?: (id: number) => Promise<void>;
+  onRowClick?: (id: number) => void;
 }
 
-export function LeadsTable({ leads, loading, selected, onSelectChange, onDeleteOne }: LeadsTableProps) {
+function getScoreBadgeClass(score: number) {
+  if (score >= 75) return "bg-emerald-50 text-emerald-700 border-emerald-200/60";
+  if (score >= 45) return "bg-amber-50 text-amber-700 border-amber-200/60";
+  return "bg-slate-50 text-slate-600 border-slate-200/60";
+}
+
+export function LeadsTable({
+  leads,
+  loading,
+  selected,
+  onSelectChange,
+  onDeleteOne,
+  onRowClick,
+}: LeadsTableProps) {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const allSelected = leads.length > 0 && leads.every((l) => selected.includes(l.id));
 
@@ -68,23 +84,25 @@ export function LeadsTable({ leads, loading, selected, onSelectChange, onDeleteO
             <th className="w-10 px-3 py-3">
               <input type="checkbox" checked={allSelected} onChange={toggleAll} className="accent-primary cursor-pointer" />
             </th>
+            <th className="px-4 py-3 text-left font-semibold text-text w-16">Score</th>
             <th className="px-4 py-3 text-left font-semibold text-text">Business</th>
-            <th className="px-4 py-3 text-left font-semibold text-text">Website</th>
+            <th className="px-4 py-3 text-left font-semibold text-text hidden sm:table-cell">Website</th>
             <th className="px-4 py-3 text-left font-semibold text-text">Contact</th>
-            <th className="px-4 py-3 text-left font-semibold text-text">Rating</th>
-            <th className="px-4 py-3 text-left font-semibold text-text">Links</th>
+            <th className="px-4 py-3 text-left font-semibold text-text hidden md:table-cell">Rating</th>
+            <th className="px-4 py-3 text-left font-semibold text-text hidden lg:table-cell">Links</th>
           </tr>
         </thead>
         <tbody>
           {leads.map((lead) => (
             <tr
               key={lead.id}
+              onClick={() => onRowClick?.(lead.id)}
               className={cn(
-                "border-b border-border hover:bg-background transition-colors duration-150",
+                "border-b border-border hover:bg-background transition-colors duration-150 cursor-pointer",
                 selected.includes(lead.id) && "bg-primary/5"
               )}
             >
-              <td className="px-3 py-3 text-center">
+              <td className="px-3 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                 <input
                   type="checkbox"
                   checked={selected.includes(lead.id)}
@@ -93,11 +111,33 @@ export function LeadsTable({ leads, loading, selected, onSelectChange, onDeleteO
                 />
               </td>
               <td className="px-4 py-3">
+                <div className={cn("inline-flex items-center justify-center w-8 h-8 rounded-lg font-bold border text-xs", getScoreBadgeClass(lead.leadScore ?? 0))} title={`Lead Score: ${lead.leadScore ?? 0}/100`}>
+                  {lead.leadScore ?? 0}
+                </div>
+              </td>
+              <td className="px-4 py-3">
                 <p className="font-medium text-text">{lead.name}</p>
                 {lead.category && <p className="text-xs text-muted mt-0.5">{lead.category}</p>}
                 {lead.address && <p className="text-xs text-muted truncate max-w-[200px]">{lead.address}</p>}
+                
+                {/* Mobile-only Website Link / Badge */}
+                <div className="sm:hidden mt-2 flex flex-wrap items-center gap-2">
+                  <StatusBadge status={lead.websiteStatus} />
+                  {lead.websiteUrl && (
+                    <a 
+                      href={lead.websiteUrl.startsWith('http') ? lead.websiteUrl : `https://${lead.websiteUrl}`} 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="text-xs text-primary hover:underline truncate max-w-[120px] cursor-pointer"
+                      title={lead.websiteUrl}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {lead.websiteUrl}
+                    </a>
+                  )}
+                </div>
               </td>
-              <td className="px-4 py-3">
+              <td className="px-4 py-3 hidden sm:table-cell">
                 <StatusBadge status={lead.websiteStatus} />
                 {lead.websiteUrl && (
                   <a 
@@ -106,6 +146,7 @@ export function LeadsTable({ leads, loading, selected, onSelectChange, onDeleteO
                     rel="noopener noreferrer" 
                     className="block text-xs text-primary hover:underline mt-1 truncate max-w-[140px] cursor-pointer"
                     title={lead.websiteUrl}
+                    onClick={(e) => e.stopPropagation()}
                   >
                     {lead.websiteUrl}
                   </a>
@@ -117,9 +158,10 @@ export function LeadsTable({ leads, loading, selected, onSelectChange, onDeleteO
                   phone={lead.phone}
                   socialLinks={lead.socialLinks}
                   bestContact={lead.bestContact}
+                  emailVerifiedStatus={lead.emailVerifiedStatus}
                 />
               </td>
-              <td className="px-4 py-3">
+              <td className="px-4 py-3 hidden md:table-cell">
                 {lead.rating ? (
                   <div className="flex items-center gap-1">
                     <Star className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
@@ -128,7 +170,7 @@ export function LeadsTable({ leads, loading, selected, onSelectChange, onDeleteO
                   </div>
                 ) : <span className="text-muted">—</span>}
               </td>
-              <td className="px-4 py-3">
+              <td className="px-4 py-3 hidden lg:table-cell" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center gap-3">
                   {lead.mapsUrl && (
                     <a href={lead.mapsUrl} target="_blank" rel="noopener noreferrer" title="Open in Google Maps" className="text-muted hover:text-primary transition-colors cursor-pointer">

@@ -1,6 +1,7 @@
 import { getPlacesCache, setPlacesCache } from "./cache";
 
 const PLACES_KEY = process.env.GOOGLE_PLACES_API_KEY || "";
+const SERPAPI_KEY = process.env.SERPAPI_KEY || "";
 const BASE = "https://maps.googleapis.com/maps/api/place";
 
 async function fetchPages(url: string, params: Record<string, string>): Promise<unknown[]> {
@@ -22,6 +23,56 @@ async function fetchPages(url: string, params: Record<string, string>): Promise<
   return results;
 }
 
+export async function searchNearbySerpAPI(
+  businessType: string,
+  lat: number,
+  lng: number
+): Promise<unknown[]> {
+  if (!SERPAPI_KEY) {
+    console.warn("No SERPAPI_KEY configured for fallback.");
+    return [];
+  }
+
+  try {
+    const params = new URLSearchParams({
+      engine: "google_maps",
+      q: businessType,
+      ll: `@${lat},${lng},14z`,
+      type: "search",
+      api_key: SERPAPI_KEY,
+    });
+
+    const res = await fetch(`https://serpapi.com/search.json?${params}`);
+    if (!res.ok) {
+      throw new Error(`SerpAPI error: ${res.statusText}`);
+    }
+
+    const data = await res.json() as { local_results?: any[] };
+    const localResults = data.local_results ?? [];
+
+    return localResults.map((item) => ({
+      place_id: item.gps_coordinates ? `serp:${item.gps_coordinates.latitude},${item.gps_coordinates.longitude}` : `serp:${item.title}`,
+      name: item.title,
+      types: [item.type].filter(Boolean),
+      vicinity: item.address,
+      formatted_address: item.address,
+      formatted_phone_number: item.phone,
+      website: item.website,
+      rating: item.rating,
+      user_ratings_total: item.reviews,
+      geometry: {
+        location: {
+          lat: item.gps_coordinates?.latitude ?? lat,
+          lng: item.gps_coordinates?.longitude ?? lng,
+        },
+      },
+    }));
+  } catch (err) {
+    console.error("Failed to fetch from SerpAPI fallback:", err);
+    return [];
+  }
+}
+
 export async function searchNearby(
   businessType: string,
   lat: number,
@@ -34,14 +85,68 @@ export async function searchNearby(
     return cached;
   }
 
-  const results = await fetchPages(`${BASE}/nearbysearch/json`, {
-    keyword: businessType,
-    location: `${lat},${lng}`,
-    radius: String(radiusM),
-  });
+  let results: unknown[] = [];
+  try {
+    if (!PLACES_KEY) throw new Error("Google Places key not set");
+    results = await fetchPages(`${BASE}/nearbysearch/json`, {
+      keyword: businessType,
+      location: `${lat},${lng}`,
+      radius: String(radiusM),
+    });
+  } catch (err) {
+    console.warn(`Google Places search failed, falling back to SerpAPI:`, err);
+    results = await searchNearbySerpAPI(businessType, lat, lng);
+  }
 
-  await setPlacesCache(cacheKey, results);
+  if (results.length > 0) {
+    await setPlacesCache(cacheKey, results);
+  }
   return results;
+}
+
+export async function searchTextSerpAPI(businessType: string, location: string): Promise<unknown[]> {
+  if (!SERPAPI_KEY) {
+    console.warn("No SERPAPI_KEY configured for fallback.");
+    return [];
+  }
+
+  try {
+    const params = new URLSearchParams({
+      engine: "google_maps",
+      q: `${businessType} in ${location}`,
+      type: "search",
+      api_key: SERPAPI_KEY,
+    });
+
+    const res = await fetch(`https://serpapi.com/search.json?${params}`);
+    if (!res.ok) {
+      throw new Error(`SerpAPI error: ${res.statusText}`);
+    }
+
+    const data = await res.json() as { local_results?: any[] };
+    const localResults = data.local_results ?? [];
+
+    return localResults.map((item) => ({
+      place_id: item.gps_coordinates ? `serp:${item.gps_coordinates.latitude},${item.gps_coordinates.longitude}` : `serp:${item.title}`,
+      name: item.title,
+      types: [item.type].filter(Boolean),
+      vicinity: item.address,
+      formatted_address: item.address,
+      formatted_phone_number: item.phone,
+      website: item.website,
+      rating: item.rating,
+      user_ratings_total: item.reviews,
+      geometry: {
+        location: {
+          lat: item.gps_coordinates?.latitude ?? 0,
+          lng: item.gps_coordinates?.longitude ?? 0,
+        },
+      },
+    }));
+  } catch (err) {
+    console.error("Failed to fetch from SerpAPI text search fallback:", err);
+    return [];
+  }
 }
 
 export async function searchText(businessType: string, location: string): Promise<unknown[]> {
@@ -51,15 +156,28 @@ export async function searchText(businessType: string, location: string): Promis
     return cached;
   }
 
-  const results = await fetchPages(`${BASE}/textsearch/json`, {
-    query: `${businessType} in ${location}`,
-  });
+  let results: unknown[] = [];
+  try {
+    if (!PLACES_KEY) throw new Error("Google Places key not set");
+    results = await fetchPages(`${BASE}/textsearch/json`, {
+      query: `${businessType} in ${location}`,
+    });
+  } catch (err) {
+    console.warn(`Google Places text search failed, falling back to SerpAPI:`, err);
+    results = await searchTextSerpAPI(businessType, location);
+  }
 
-  await setPlacesCache(cacheKey, results);
+  if (results.length > 0) {
+    await setPlacesCache(cacheKey, results);
+  }
   return results;
 }
 
 export async function getPlaceDetails(placeId: string): Promise<Record<string, unknown> | null> {
+  if (placeId.startsWith("serp:")) {
+    return {};
+  }
+
   const cacheKey = `details:${placeId}`;
   const cached = await getPlacesCache(cacheKey);
   if (cached) {

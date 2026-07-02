@@ -3,7 +3,7 @@ import { prisma } from "../db";
 const globalForWorker = global as unknown as { workerStarted?: boolean };
 
 async function runTask(taskType: string, payload: any): Promise<void> {
-  const { runSearchJob, pingLead, crawlLead, generateCampaignDrafts, sendCampaign } = await import("./jobs");
+  const { runSearchJob, pingLead, crawlLead, generateCampaignDrafts, sendCampaign, verifyLeadEmail, calculateLeadScore } = await import("./jobs");
   switch (taskType) {
     case "search":
       await runSearchJob(payload.jobId);
@@ -14,11 +14,25 @@ async function runTask(taskType: string, payload: any): Promise<void> {
     case "crawl":
       await crawlLead(payload.leadId);
       break;
+    case "verify_email":
+      await verifyLeadEmail(payload.leadId);
+      break;
+    case "calculate_score":
+      await calculateLeadScore(payload.leadId);
+      break;
     case "ai_draft":
       await generateCampaignDrafts(payload.campaignId);
       break;
     case "send":
       await sendCampaign(payload.campaignId);
+      break;
+    case "send_follow_up":
+      const { sendFollowUpCampaign } = await import("./jobs");
+      await sendFollowUpCampaign(payload.campaignId);
+      break;
+    case "check_replies":
+      const { checkAllCampaignReplies } = await import("./jobs");
+      await checkAllCampaignReplies();
       break;
     default:
       throw new Error(`Unknown task type: ${taskType}`);
@@ -110,6 +124,15 @@ export function startQueueWorker() {
   globalForWorker.workerStarted = true;
 
   console.log("Initializing database-backed queue worker...");
+
+  // Start periodic reply checking
+  prisma.jobQueue.findFirst({
+    where: { taskType: "check_replies", status: "pending" }
+  }).then(exists => {
+    if (!exists) {
+      enqueueJob("check_replies", {}, 10).catch(() => {});
+    }
+  });
 
   async function tick() {
     try {

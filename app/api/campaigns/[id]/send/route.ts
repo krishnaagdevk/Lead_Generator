@@ -16,6 +16,10 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "No Gmail account selected" }, { status: 400 });
   }
 
-  await enqueueJob("send", { campaignId: campaign.id });
-  return NextResponse.json({ message: "Sending started" }, { status: 202 });
+  const delaySeconds = campaign.scheduledAt
+    ? Math.max(0, Math.floor((campaign.scheduledAt.getTime() - Date.now()) / 1000))
+    : 0;
+
+  await enqueueJob("send", { campaignId: campaign.id }, delaySeconds);
+  return NextResponse.json({ message: "Sending scheduled/started" }, { status: 202 });
 }
