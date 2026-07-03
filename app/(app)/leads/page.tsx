@@ -4,7 +4,7 @@ import { LeadsTable } from "@/components/leads/LeadsTable";
 import { FilterBar } from "@/components/leads/FilterBar";
 import { ExportMenu } from "@/components/leads/ExportMenu";
 import { LeadDetailDrawer } from "@/components/leads/LeadDetailDrawer";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLeadsQuery, useOfflineDeleteLead, useOfflineBulkDeleteLeads } from "@/hooks/useLeads";
 import { useState } from "react";
 
 interface Filters {
@@ -18,12 +18,10 @@ interface Filters {
 }
 
 export default function LeadsPage() {
-  const qc = useQueryClient();
   const [filters, setFilters] = useState<Filters>({});
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number | "all">(50);
   const [selected, setSelected] = useState<number[]>([]);
-  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
   const [selectedLeadId, setSelectedLeadId] = useState<number | null>(null);
 
   const params = new URLSearchParams();
@@ -34,22 +32,11 @@ export default function LeadsPage() {
   if (filters.sortBy) params.set("sortBy", filters.sortBy);
   if (filters.pipelineStage) params.set("pipelineStage", filters.pipelineStage);
 
-  const { data, isLoading } = useQuery({
-    queryKey: ["leads", params.toString()],
-    queryFn: () => fetch(`/api/leads?${params}`).then((r) => r.json()),
-  });
+  const { data, isLoading } = useLeadsQuery(params.toString());
 
-  const deleteOneMutation = useMutation({
-    mutationFn: async (id: number) => {
-      const res = await fetch(`/api/leads/${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Failed to delete lead");
-      return res.json();
-    },
-    onSuccess: (_, id) => {
-      qc.invalidateQueries({ queryKey: ["leads"] });
-      setSelected((prev) => prev.filter((sId) => sId !== id));
-    },
-  });
+  const deleteOneMutation = useOfflineDeleteLead();
+  const bulkDeleteMutation = useOfflineBulkDeleteLeads();
+  const isBulkDeleting = bulkDeleteMutation.isPending;
 
   const handleDeleteOne = async (id: number) => {
     await deleteOneMutation.mutateAsync(id);
@@ -58,20 +45,11 @@ export default function LeadsPage() {
   const handleBulkDelete = async () => {
     if (selected.length === 0) return;
     if (confirm(`Are you sure you want to delete the ${selected.length} selected lead(s)?`)) {
-      setIsBulkDeleting(true);
       try {
-        const res = await fetch("/api/leads", {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ids: selected }),
-        });
-        if (!res.ok) throw new Error("Bulk delete failed");
-        qc.invalidateQueries({ queryKey: ["leads"] });
+        await bulkDeleteMutation.mutateAsync(selected);
         setSelected([]);
       } catch (err) {
         alert("Failed to delete leads: " + String(err));
-      } finally {
-        setIsBulkDeleting(false);
       }
     }
   };
@@ -112,18 +90,34 @@ export default function LeadsPage() {
               <option value="all">Show All</option>
             </select>
           </div>
-          <div className="flex items-center gap-2">
-            {selected.length > 0 && (
-              <button
-                disabled={isBulkDeleting}
-                onClick={handleBulkDelete}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 cursor-pointer transition-colors duration-150"
-              >
-                {isBulkDeleting ? "Deleting..." : `Delete Selected (${selected.length})`}
-              </button>
-            )}
-            <ExportMenu selectedIds={selected} />
-          </div>
+           <div className="flex items-center gap-2">
+             {selected.length > 0 && (
+               <>
+                 <button
+                   onClick={async () => {
+                     const res = await fetch("/api/leads/enrich-bulk", {
+                       method: "POST",
+                       headers: { "Content-Type": "application/json" },
+                       body: JSON.stringify({ ids: selected }),
+                     });
+                     const data = await res.json();
+                     alert(`Queued ${data.queued} enrichment jobs`);
+                   }}
+                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border border-border text-text hover:bg-background cursor-pointer"
+                 >
+                   Find Emails ({selected.length})
+                 </button>
+                 <button
+                   disabled={isBulkDeleting}
+                   onClick={handleBulkDelete}
+                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 cursor-pointer transition-colors duration-150"
+                 >
+                   {isBulkDeleting ? "Deleting..." : `Delete Selected (${selected.length})`}
+                 </button>
+               </>
+             )}
+             <ExportMenu selectedIds={selected} />
+           </div>
         </div>
       </div>
 

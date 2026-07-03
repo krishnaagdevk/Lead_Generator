@@ -16,6 +16,7 @@ import { extractContactInfo } from "./crawler";
 import { cityToLatLng, pointInPolygon } from "./geocoding";
 import { sendGmail, decryptToken, checkReplyForMessage, getReplyMessageBodyAndDetails } from "./gmail";
 import { generateDraft, analyzeReply } from "./groq";
+import { fireWebhook } from "./webhook";
 import { checkWebsite } from "./ping";
 import { searchNearby, searchText, normalizePlace, getPlaceDetails } from "./places";
 import { enqueueJob } from "./queue";
@@ -147,6 +148,14 @@ export async function runSearchJob(jobId: number): Promise<void> {
       data: { usageLeads: { increment: newLeads.length } },
     });
 
+    // Fire webhook if enabled for this user
+    if (user.webhookEnabled && user.webhookUrl) {
+      fireWebhook(user.webhookUrl, "leads.created", {
+        count: newLeads.length,
+        leads: newLeads.map(l => ({ name: l.name, placeId: l.placeId })),
+      }).catch(() => {});
+    }
+
     await prisma.searchJob.update({
       where: { id: jobId },
       data: { 
@@ -264,6 +273,9 @@ export async function generateCampaignDrafts(campaignId: number): Promise<void> 
         websiteStatus: draft.lead.websiteStatus,
         rating: draft.lead.rating,
         reviewCount: draft.lead.reviewCount,
+      }, {
+        reviewPitchAngle: (draft.lead as any).reviewPitchAngle ?? undefined,
+        calendlyUrl: user.calendlyUrl ?? undefined,
       });
       await prisma.emailDraft.update({
         where: { id: draft.id },
@@ -435,6 +447,175 @@ export async function calculateLeadScore(leadId: number): Promise<void> {
   });
 }
 
+/** Enrich a lead's email using Hunter.io */
+export async function enrichLead(leadId: number): Promise<void> {
+  const lead = await prisma.lead.findUnique({ where: { id: leadId } });
+  if (!lead || lead.email) return;
+
+  const { findEmailForBusiness } = await import("./enrichment");
+  const result = await findEmailForBusiness(lead.websiteUrl, lead.name);
+
+  if (result.email) {
+    await prisma.lead.update({
+      where: { id: leadId },
+      data: {
+        email: result.email,
+        emailVerifiedStatus: "valid",
+        enrichedAt: new Date(),
+        enrichmentSource: "hunter",
+        decisionMakerName: result.firstName && result.lastName
+          ? `${result.firstName} ${result.lastName}`
+          : undefined,
+        decisionMakerTitle: result.position ?? undefined,
+      },
+    });
+    await enqueueJob("calculate_score", { leadId });
+  }
+}
+
+/** Check a lead's domain expiry using WHOIS */
+export async function checkLeadDomainExpiry(leadId: number): Promise<void> {
+  const lead = await prisma.lead.findUnique({ where: { id: leadId } });
+  if (!lead?.websiteUrl) return;
+
+  const { checkDomainExpiry } = await import("./domainChecker");
+  const result = await checkDomainExpiry(lead.websiteUrl);
+  if (!result) return;
+
+  await prisma.lead.update({
+    where: { id: leadId },
+    data: {
+      domainExpiryDate: result.expiryDate ?? undefined,
+      domainExpiresInDays: result.daysUntilExpiry ?? undefined,
+    },
+  });
+}
+
+/** Analyze a lead's Google reviews for sentiment and pain points */
+export async function analyzeLeadReviews(leadId: number): Promise<void> {
+  const lead = await prisma.lead.findUnique({ where: { id: leadId } });
+  if (!lead) return;
+
+  const { getPlaceDetails } = await import("./places");
+  const details = (await getPlaceDetails(lead.placeId)) as { reviews?: Array<{ text?: string; rating?: number }> } | null;
+  const reviews = details?.reviews ?? [];
+
+  if (!reviews || reviews.length === 0) return;
+
+  const { analyzeReviews } = await import("./sentimentAnalysis");
+  const sentiment = await analyzeReviews(lead.name, reviews.map((r: any) => ({ text: r.text, rating: r.rating })));
+  if (!sentiment) return;
+
+  await prisma.lead.update({
+    where: { id: leadId },
+    data: {
+      reviewSentiment: sentiment.overallSentiment,
+      reviewPainPoints: sentiment.topPainPoints,
+      reviewPitchAngle: sentiment.pitchAngle,
+    },
+  });
+}
+
+/** Process all due sequence enrollments — send next step email */
+export async function processSequences(): Promise<void> {
+  const dueEnrollments = await prisma.sequenceEnrollment.findMany({
+    where: { status: "active", nextSendAt: { lte: new Date() } },
+    include: { lead: true, campaign: { include: { emailAccount: true } }, step: true },
+    take: 50,
+  });
+
+  for (const enrollment of dueEnrollments) {
+    try {
+      const { lead, campaign, step } = enrollment;
+      if (!step || !campaign.emailAccount || !lead.email) {
+        await prisma.sequenceEnrollment.update({ where: { id: enrollment.id }, data: { status: "failed" } });
+        continue;
+      }
+
+      const personalizedSubject = step.subject
+        .replace(/{{name}}/g, lead.name)
+        .replace(/{{city}}/g, lead.address?.split(",")[1]?.trim() ?? "your area");
+      const personalizedBody = step.body
+        .replace(/{{name}}/g, lead.name)
+        .replace(/{{city}}/g, lead.address?.split(",")[1]?.trim() ?? "your area");
+
+      const tokenData = decryptToken(campaign.emailAccount.oauthTokenEncrypted);
+      await sendGmail(tokenData, lead.email, personalizedSubject, personalizedBody);
+
+      const nextStep = await prisma.sequenceStep.findFirst({
+        where: { campaignId: enrollment.campaignId, stepNumber: enrollment.currentStep + 1 },
+      });
+
+      if (nextStep) {
+        const nextSendAt = new Date(Date.now() + nextStep.delayDays * 24 * 60 * 60 * 1000);
+        await prisma.sequenceEnrollment.update({
+          where: { id: enrollment.id },
+          data: { currentStep: nextStep.stepNumber, stepId: nextStep.id, nextSendAt },
+        });
+      } else {
+        await prisma.sequenceEnrollment.update({ where: { id: enrollment.id }, data: { status: "completed" } });
+      }
+    } catch (err) {
+      console.error(`Sequence enrollment ${enrollment.id} failed:`, err);
+    }
+  }
+
+  const remaining = await prisma.sequenceEnrollment.count({ where: { status: "active" } });
+  if (remaining > 0) {
+    await enqueueJob("process_sequences", {}, 3600);
+  }
+}
+
+/** Send weekly summary email to all users */
+export async function sendWeeklySummary(): Promise<void> {
+  const users = await prisma.user.findMany({
+    where: { parentId: null },
+    select: { id: true, email: true },
+  });
+
+  const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+  for (const user of users) {
+    const [newLeads, emailsSent, replies, wonDeals] = await Promise.all([
+      prisma.lead.count({ where: { userId: user.id, createdAt: { gte: oneWeekAgo } } }),
+      prisma.emailLog.count({ where: { campaign: { userId: user.id }, sentAt: { gte: oneWeekAgo } } }),
+      prisma.emailLog.count({ where: { campaign: { userId: user.id }, repliedAt: { gte: oneWeekAgo } } }),
+      prisma.lead.count({ where: { userId: user.id, pipelineStage: "won", dealClosedAt: { gte: oneWeekAgo } } }),
+    ]);
+
+    const summaryHtml = `<h2>Your LeadHunter Weekly Summary</h2><ul>
+      <li>📍 New leads discovered: <strong>${newLeads}</strong></li>
+      <li>📧 Emails sent: <strong>${emailsSent}</strong></li>
+      <li>💬 Replies received: <strong>${replies}</strong></li>
+      <li>🏆 Deals won: <strong>${wonDeals}</strong></li>
+    </ul>`;
+
+    try {
+      if (!process.env.RESEND_API_KEY) {
+        console.warn(`Skipping weekly summary for ${user.email} because RESEND_API_KEY is not set.`);
+        continue;
+      }
+      const res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          from: "LeadHunter <noreply@leadhunter.app>",
+          to: user.email,
+          subject: "Your LeadHunter Weekly Summary",
+          html: summaryHtml,
+        }),
+      });
+      if (!res.ok) console.error(`Weekly summary fail for ${user.email}:`, await res.text());
+    } catch (err) {
+      console.error(`Error sending weekly summary to ${user.email}:`, err);
+    }
+  }
+  await enqueueJob("weekly_summary", {}, 604800);
+}
+
 export async function checkAllCampaignReplies(): Promise<void> {
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000);
   const pendingLogs = await prisma.emailLog.findMany({
@@ -445,7 +626,7 @@ export async function checkAllCampaignReplies(): Promise<void> {
     },
     include: {
       campaign: {
-        include: { emailAccount: true },
+        include: { emailAccount: true, user: { select: { slackBotToken: true, slackChannelId: true } } },
       },
       lead: true,
     },
@@ -468,22 +649,43 @@ export async function checkAllCampaignReplies(): Promise<void> {
         console.error("AI Reply Analysis failed:", e);
       }
 
-      await prisma.$transaction([
-        prisma.emailLog.update({
-          where: { id: log.id },
-          data: { 
-            status: EmailLogStatus.replied, 
-            repliedAt: new Date(),
+       await prisma.$transaction([
+         prisma.emailLog.update({
+           where: { id: log.id },
+           data: { 
+             status: EmailLogStatus.replied, 
+             repliedAt: new Date(),
+             replyBody: replyDetails.body,
+             replyClassification: classification,
+             replySuggestedResponse: suggestedResponse,
+           },
+         }),
+         prisma.lead.update({
+           where: { id: log.leadId },
+           data: { pipelineStage: PipelineStage.replied },
+         }),
+         // Stop sequence for this lead
+         prisma.sequenceEnrollment.updateMany({
+           where: { leadId: log.leadId, status: "active" },
+           data: { status: "replied" },
+         }),
+       ]);
+       
+        // Send Slack notification (user-level tokens if configured, else global env vars)
+        try {
+          const { sendSlackReplyNotification } = await import("./slack");
+          await sendSlackReplyNotification({
+            leadName: log.lead.name,
+            leadId: log.leadId,
             replyBody: replyDetails.body,
-            replyClassification: classification,
-            replySuggestedResponse: suggestedResponse,
-          },
-        }),
-        prisma.lead.update({
-          where: { id: log.leadId },
-          data: { pipelineStage: PipelineStage.replied },
-        }),
-      ]);
+            classification: classification,
+            appUrl: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+            botToken: log.campaign.user.slackBotToken ?? undefined,
+            channelId: log.campaign.user.slackChannelId ?? undefined,
+          });
+        } catch (err) {
+          console.error("Failed to send Slack notification:", err);
+        }
     }
   }
 
@@ -558,3 +760,4 @@ export async function sendFollowUpCampaign(campaignId: number): Promise<void> {
     data: { followUpCount: { increment: 1 } },
   });
 }
+

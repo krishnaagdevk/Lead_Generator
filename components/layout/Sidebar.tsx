@@ -16,7 +16,7 @@ const NAV = [
   { href: "/settings",  icon: Settings,  label: "Settings" },
 ];
 
-export function Sidebar() {
+export function Sidebar({ brandName, brandLogo, brandColor }: { brandName?: string | null; brandLogo?: string | null; brandColor?: string | null }) {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -30,13 +30,17 @@ export function Sidebar() {
     <div className="flex flex-col h-full">
       <div className="px-4 py-5 border-b border-white/10 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-md flex items-center justify-center" style={{ backgroundColor: "var(--color-primary)" }}>
-            <svg viewBox="0 0 24 24" className="w-4 h-4 stroke-white fill-none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
-              <circle cx="12" cy="10" r="3"/>
-            </svg>
+          <div className="w-7 h-7 rounded-md flex items-center justify-center" style={{ backgroundColor: brandColor || "var(--color-primary)" }}>
+            {brandLogo ? (
+              <img src={brandLogo} alt={brandName ?? ""} className="w-4 h-4 rounded object-contain" />
+            ) : (
+              <svg viewBox="0 0 24 24" className="w-4 h-4 stroke-white fill-none" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                <circle cx="12" cy="10" r="3"/>
+              </svg>
+            )}
           </div>
-          <span className="text-white font-bold text-base">LeadHunter</span>
+          <span className="text-white font-bold text-base">{brandName || "LeadHunter"}</span>
         </div>
         <button
           onClick={() => setMobileOpen(false)}
@@ -53,6 +57,7 @@ export function Sidebar() {
             <Link
               key={href}
               href={href}
+              prefetch={false}
               aria-current={active ? "page" : undefined}
               onClick={() => setMobileOpen(false)}
               className={cn(
@@ -96,13 +101,17 @@ export function Sidebar() {
           <Menu className="w-6 h-6" />
         </button>
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded bg-primary flex items-center justify-center">
-            <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 stroke-white fill-none" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
-              <circle cx="12" cy="10" r="3"/>
-            </svg>
+          <div className="w-6 h-6 rounded flex items-center justify-center" style={{ backgroundColor: brandColor || "var(--color-primary)" }}>
+            {brandLogo ? (
+              <img src={brandLogo} alt={brandName ?? ""} className="w-3.5 h-3.5 rounded object-contain" />
+            ) : (
+              <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 stroke-white fill-none" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/>
+                <circle cx="12" cy="10" r="3"/>
+              </svg>
+            )}
           </div>
-          <span className="text-white font-bold text-sm">LeadHunter</span>
+          <span className="text-white font-bold text-sm">{brandName || "LeadHunter"}</span>
         </div>
         <div className="w-6 h-6" />
       </header>

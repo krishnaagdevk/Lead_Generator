@@ -31,11 +31,34 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!lead || lead.userId !== session.userId) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const body = await req.json() as Record<string, unknown>;
-  const allowed = ["pipelineStage", "notes", "email", "phone"] as const;
+  const allowed = ["pipelineStage", "notes", "email", "phone", "dealValue", "dealClosedAt", "dealNotes"] as const;
   const data: Record<string, unknown> = {};
   for (const key of allowed) if (body[key] !== undefined) data[key] = body[key];
 
   const updated = await prisma.lead.update({ where: { id: Number(id) }, data });
+  
+  // Send Slack notification if pipeline stage changed (user-level or global)
+  if (body.pipelineStage && body.pipelineStage !== lead.pipelineStage) {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: session.userId },
+        select: { slackBotToken: true, slackChannelId: true },
+      });
+      const { sendSlackPipelineNotification } = await import("@/lib/server/slack");
+      await sendSlackPipelineNotification({
+        leadName: lead.name,
+        leadId: lead.id,
+        fromStage: lead.pipelineStage,
+        toStage: body.pipelineStage as string,
+        appUrl: process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+        botToken: user?.slackBotToken ?? undefined,
+        channelId: user?.slackChannelId ?? undefined,
+      });
+    } catch (err) {
+      console.error("Failed to send Slack notification:", err);
+    }
+  }
+  
   return NextResponse.json(updated);
 }
 

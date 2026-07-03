@@ -34,6 +34,26 @@ async function runTask(taskType: string, payload: any): Promise<void> {
       const { checkAllCampaignReplies } = await import("./jobs");
       await checkAllCampaignReplies();
       break;
+    case "enrich_lead":
+      const { enrichLead } = await import("./jobs");
+      await enrichLead(payload.leadId);
+      break;
+    case "check_domain_expiry":
+      const { checkLeadDomainExpiry } = await import("./jobs");
+      await checkLeadDomainExpiry(payload.leadId);
+      break;
+    case "analyze_reviews":
+      const { analyzeLeadReviews } = await import("./jobs");
+      await analyzeLeadReviews(payload.leadId);
+      break;
+    case "process_sequences":
+      const { processSequences } = await import("./jobs");
+      await processSequences();
+      break;
+    case "weekly_summary":
+      const { sendWeeklySummary } = await import("./jobs");
+      await sendWeeklySummary();
+      break;
     default:
       throw new Error(`Unknown task type: ${taskType}`);
   }
@@ -131,6 +151,15 @@ export function startQueueWorker() {
   }).then(exists => {
     if (!exists) {
       enqueueJob("check_replies", {}, 10).catch(() => {});
+    }
+  });
+  
+  // Seed weekly summary job
+  prisma.jobQueue.findFirst({
+    where: { taskType: "weekly_summary", status: "pending" }
+  }).then(exists => {
+    if (!exists) {
+      enqueueJob("weekly_summary", {}, 0).catch(() => {}); // First run immediately
     }
   });
 

@@ -2,7 +2,7 @@
 
 import { StatusBadge } from "./StatusBadge";
 import { ContactBadge } from "./ContactBadge";
-import { Star, ExternalLink, Loader2, Trash2 } from "lucide-react";
+import { Star, ExternalLink, Loader2, Trash2, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
 
@@ -170,40 +170,52 @@ export function LeadsTable({
                   </div>
                 ) : <span className="text-muted">—</span>}
               </td>
-              <td className="px-4 py-3 hidden lg:table-cell" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center gap-3">
-                  {lead.mapsUrl && (
-                    <a href={lead.mapsUrl} target="_blank" rel="noopener noreferrer" title="Open in Google Maps" className="text-muted hover:text-primary transition-colors cursor-pointer">
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
-                  )}
-                  {onDeleteOne && (
-                    <button
-                      disabled={deletingId !== null}
-                      onClick={async () => {
-                        if (confirm(`Are you sure you want to delete "${lead.name}"?`)) {
-                          setDeletingId(lead.id);
-                          try {
-                            await onDeleteOne(lead.id);
-                          } catch (err) {
-                            console.error(err);
-                          } finally {
-                            setDeletingId(null);
-                          }
-                        }
-                      }}
-                      className="text-muted hover:text-red-500 transition-colors cursor-pointer disabled:opacity-50"
-                      title="Delete Lead"
-                    >
-                      {deletingId === lead.id ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Trash2 className="w-3.5 h-3.5" />
-                      )}
-                    </button>
-                  )}
-                </div>
-              </td>
+               <td className="px-4 py-3 hidden lg:table-cell" onClick={(e) => e.stopPropagation()}>
+                 <div className="flex items-center gap-3">
+                   {!lead.email && (
+                     <button
+                       onClick={async (e) => {
+                         e.stopPropagation();
+                         await fetch(`/api/leads/${lead.id}/enrich`, { method: "POST" });
+                       }}
+                       title="Find email via Hunter.io"
+                       className="text-muted hover:text-primary transition-colors cursor-pointer"
+                     >
+                       <Search className="w-3.5 h-3.5" />
+                     </button>
+                   )}
+                   {lead.mapsUrl && (
+                     <a href={lead.mapsUrl} target="_blank" rel="noopener noreferrer" title="Open in Google Maps" className="text-muted hover:text-primary transition-colors cursor-pointer">
+                       <ExternalLink className="w-3.5 h-3.5" />
+                     </a>
+                   )}
+                   {onDeleteOne && (
+                     <button
+                       disabled={deletingId !== null}
+                       onClick={async () => {
+                         if (confirm(`Are you sure you want to delete "${lead.name}"?`)) {
+                           setDeletingId(lead.id);
+                           try {
+                             await onDeleteOne(lead.id);
+                           } catch (err) {
+                             console.error(err);
+                           } finally {
+                             setDeletingId(null);
+                           }
+                         }
+                       }}
+                       className="text-muted hover:text-red-500 transition-colors cursor-pointer disabled:opacity-50"
+                       title="Delete Lead"
+                     >
+                       {deletingId === lead.id ? (
+                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                       ) : (
+                         <Trash2 className="w-3.5 h-3.5" />
+                       )}
+                     </button>
+                   )}
+                 </div>
+               </td>
             </tr>
           ))}
         </tbody>

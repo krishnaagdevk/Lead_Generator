@@ -61,6 +61,35 @@ export function SearchPanel() {
   const [polygon, setPolygon] = useState<Array<{ lat: number; lng: number }>>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
 
+  const autocompleteService = useRef<any>(null);
+  const [citySuggestions, setCitySuggestions] = useState<string[]>([]);
+  const [showCitySuggestions, setShowCitySuggestions] = useState(false);
+
+  const fetchCitySuggestions = (input: string) => {
+    if (!input.trim()) {
+      setCitySuggestions([]);
+      return;
+    }
+    if (typeof window !== "undefined" && window.google?.maps?.places) {
+      if (!autocompleteService.current) {
+        autocompleteService.current = new window.google.maps.places.AutocompleteService();
+      }
+      autocompleteService.current.getPlacePredictions(
+        {
+          input,
+          types: ["(regions)"],
+        },
+        (predictions: any, status: any) => {
+          if (status === window.google.maps.places.PlacesServiceStatus.OK && predictions) {
+            setCitySuggestions(predictions.map((p: any) => p.description));
+          } else {
+            setCitySuggestions([]);
+          }
+        }
+      );
+    }
+  };
+
   const { data: savedSearches, refetch: refetchSaved } = useQuery<any[]>({
     queryKey: ["saved-searches"],
     queryFn: () => fetch("/api/saved-searches").then((r) => r.json()),
@@ -327,12 +356,37 @@ export function SearchPanel() {
           )}
 
           {tab === "city" && (
-            <Input
-              label="City / Neighborhood / Postcode"
-              placeholder="e.g. Austin, TX or SW1A 1AA"
-              value={city}
-              onChange={(e) => setCity(e.target.value)}
-            />
+            <div className="relative">
+              <Input
+                label="City / Neighborhood / Postcode"
+                placeholder="e.g. Austin, TX or SW1A 1AA"
+                value={city}
+                onChange={(e) => {
+                  setCity(e.target.value);
+                  fetchCitySuggestions(e.target.value);
+                }}
+                onFocus={() => setShowCitySuggestions(true)}
+                onBlur={() => setTimeout(() => setShowCitySuggestions(false), 200)}
+              />
+              {showCitySuggestions && citySuggestions.length > 0 && (
+                <div className="absolute z-50 w-full mt-1 bg-white border border-border rounded-md shadow-lg max-h-60 overflow-y-auto">
+                  {citySuggestions.map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        setCity(suggestion);
+                        setShowCitySuggestions(false);
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-background cursor-pointer transition-colors font-medium text-text"
+                    >
+                      {suggestion}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
 
           {tab === "polygon" && (
@@ -350,19 +404,47 @@ export function SearchPanel() {
           {tab === "multi_city" && (
             <div className="flex flex-col gap-2">
               <div className="flex gap-2">
-                <input
-                  className="flex-1 h-9 rounded-md border border-border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
-                  placeholder="Add a city"
-                  value={cityInput}
-                  onChange={(e) => setCityInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && cityInput.trim()) {
-                      setCities((c) => [...c, cityInput.trim()]);
-                      setCityInput("");
-                    }
-                  }}
-                />
-                <Button size="sm" onClick={() => { if (cityInput.trim()) { setCities((c) => [...c, cityInput.trim()]); setCityInput(""); } }}>
+                <div className="flex-1 relative">
+                  <input
+                    className="w-full h-9 rounded-md border border-border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 bg-white text-text"
+                    placeholder="Add a city"
+                    value={cityInput}
+                    onChange={(e) => {
+                      setCityInput(e.target.value);
+                      fetchCitySuggestions(e.target.value);
+                    }}
+                    onFocus={() => setShowCitySuggestions(true)}
+                    onBlur={() => setTimeout(() => setShowCitySuggestions(false), 200)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && cityInput.trim()) {
+                        setCities((c) => [...c, cityInput.trim()]);
+                        setCityInput("");
+                        setCitySuggestions([]);
+                      }
+                    }}
+                  />
+                  {showCitySuggestions && citySuggestions.length > 0 && (
+                    <div className="absolute z-50 w-full mt-1 bg-white border border-border rounded-md shadow-lg max-h-60 overflow-y-auto">
+                      {citySuggestions.map((suggestion) => (
+                        <button
+                          key={suggestion}
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            setCities((c) => [...c, suggestion]);
+                            setCityInput("");
+                            setShowCitySuggestions(false);
+                            setCitySuggestions([]);
+                          }}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-background cursor-pointer transition-colors font-medium text-text"
+                        >
+                          {suggestion}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <Button size="sm" onClick={() => { if (cityInput.trim()) { setCities((c) => [...c, cityInput.trim()]); setCityInput(""); setCitySuggestions([]); } }}>
                   Add
                 </Button>
               </div>

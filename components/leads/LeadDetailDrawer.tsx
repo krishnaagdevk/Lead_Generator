@@ -2,10 +2,12 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
-import { X, Loader2, Star, Mail, Phone, Globe, MapPin, MessageCircle } from "lucide-react";
+import { useOfflineUpdateLead } from "@/hooks/useLeads";
+import { X, Loader2, Star, Mail, Phone, Globe, MapPin, MessageCircle, Search, User, AlertTriangle, FileText } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 import { StatusBadge } from "./StatusBadge";
+import { TaskPanel } from "./TaskPanel";
 import { ContactBadge } from "./ContactBadge";
 
 interface LeadDetailDrawerProps {
@@ -16,6 +18,10 @@ interface LeadDetailDrawerProps {
 export function LeadDetailDrawer({ leadId, onClose }: LeadDetailDrawerProps) {
   const qc = useQueryClient();
   const [notes, setNotes] = useState("");
+  const [smsText, setSmsText] = useState("");
+  const [smsSending, setSmsSending] = useState(false);
+  const [callScript, setCallScript] = useState<any>(null);
+  const [loadingScript, setLoadingScript] = useState(false);
 
   const { data: lead, isLoading } = useQuery({
     queryKey: ["lead-details", leadId],
@@ -23,28 +29,16 @@ export function LeadDetailDrawer({ leadId, onClose }: LeadDetailDrawerProps) {
     enabled: !!leadId,
   });
 
+  const [dealValue, setDealValue] = useState<string>("");
+
   useEffect(() => {
     if (lead) {
+      setDealValue(String(lead.dealValue ?? ""));
       setNotes(lead.notes || "");
     }
   }, [lead]);
 
-  const updateLead = useMutation({
-    mutationFn: async (data: { notes?: string; pipelineStage?: string }) => {
-      const res = await fetch(`/api/leads/${leadId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!res.ok) throw new Error("Failed to update lead");
-      return res.json();
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["leads"] });
-      qc.invalidateQueries({ queryKey: ["lead-details", leadId] });
-    },
-    onError: (err) => alert(err instanceof Error ? err.message : "Failed to save"),
-  });
+  const updateLead = useOfflineUpdateLead();
 
   if (!leadId) return null;
 
@@ -101,11 +95,11 @@ export function LeadDetailDrawer({ leadId, onClose }: LeadDetailDrawerProps) {
   }
 
   const handleSaveNotes = () => {
-    updateLead.mutate({ notes });
+    if (leadId) updateLead.mutate({ id: leadId, updates: { notes } });
   };
 
   const handleStageChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
-    updateLead.mutate({ pipelineStage: e.target.value });
+    if (leadId) updateLead.mutate({ id: leadId, updates: { pipelineStage: e.target.value } });
   };
 
   return (
@@ -163,23 +157,40 @@ export function LeadDetailDrawer({ leadId, onClose }: LeadDetailDrawerProps) {
                 )}
               </div>
 
-              {/* CRM Pipeline Stage Selection */}
-              <div className="bg-background rounded-xl p-4 border border-border">
-                <label className="text-xs font-semibold text-muted uppercase tracking-wider block mb-1.5">Pipeline Stage</label>
-                <select 
-                  className="w-full h-10 rounded-md border border-border bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 cursor-pointer font-medium text-text"
-                  value={lead.pipelineStage}
-                  onChange={handleStageChange}
-                  disabled={updateLead.isPending}
-                >
-                  <option value="new">New</option>
-                  <option value="contacted">Contacted</option>
-                  <option value="replied">Replied</option>
-                  <option value="negotiating">Negotiating</option>
-                  <option value="won">Won</option>
-                  <option value="lost">Lost</option>
-                </select>
-              </div>
+               {/* CRM Pipeline Stage Selection */}
+               <div className="bg-background rounded-xl p-4 border border-border">
+                 <label className="text-xs font-semibold text-muted uppercase tracking-wider block mb-1.5">Pipeline Stage</label>
+                 <select 
+                   className="w-full h-10 rounded-md border border-border bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 cursor-pointer font-medium text-text"
+                   value={lead.pipelineStage}
+                   onChange={handleStageChange}
+                   disabled={updateLead.isPending}
+                 >
+                   <option value="new">New</option>
+                   <option value="contacted">Contacted</option>
+                   <option value="replied">Replied</option>
+                   <option value="negotiating">Negotiating</option>
+                   <option value="won">Won</option>
+                   <option value="lost">Lost</option>
+                 </select>
+               </div>
+
+               {/* Deal Value Input */}
+               <div className="bg-background rounded-xl p-4 border border-border">
+                 <label className="text-xs font-semibold text-muted uppercase tracking-wider block mb-1.5">Deal Value ($)</label>
+                 <input
+                   type="number"
+                   min="0"
+                   step="100"
+                   value={dealValue}
+                   onChange={e => setDealValue(e.target.value)}
+                   onBlur={() => {
+                     updateLead.mutate({ id: lead.id, updates: { dealValue: dealValue ? Number(dealValue) : null } });
+                   }}
+                   placeholder="e.g. 2500"
+                   className="w-full h-10 rounded-md border border-border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 bg-white"
+                 />
+               </div>
 
               {/* AI Reply Analyzer Section */}
               {lead.emailLogs?.some((l: any) => l.status === "replied" && l.replyBody) && (
@@ -258,41 +269,181 @@ export function LeadDetailDrawer({ leadId, onClose }: LeadDetailDrawerProps) {
                 </div>
               </div>
 
-              {/* Contact Information */}
-              <div>
-                <h4 className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Contact Details</h4>
-                <div className="flex flex-col gap-2 p-3 border border-border rounded-xl">
-                  <ContactBadge
-                    email={lead.email}
-                    phone={lead.phone}
-                    socialLinks={lead.socialLinks}
-                    bestContact={lead.bestContact}
-                    emailVerifiedStatus={lead.emailVerifiedStatus}
-                  />
-                </div>
-              </div>
+               {/* Contact Information */}
+               <div>
+                 <h4 className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Contact Details</h4>
+                 <div className="flex flex-col gap-2 p-3 border border-border rounded-xl">
+                   <ContactBadge
+                     email={lead.email}
+                     phone={lead.phone}
+                     socialLinks={lead.socialLinks}
+                     bestContact={lead.bestContact}
+                     emailVerifiedStatus={lead.emailVerifiedStatus}
+                   />
+                   {!lead.email && (
+                     <button
+                       onClick={async (e) => {
+                         e.stopPropagation();
+                         await fetch(`/api/leads/${lead.id}/enrich`, { method: "POST" });
+                         qc.invalidateQueries({ queryKey: ["lead-details", leadId] });
+                       }}
+                       title="Find email via Hunter.io"
+                       className="text-xs text-primary hover:underline flex items-center gap-1 mt-1"
+                     >
+                       <Search className="w-3.5 h-3.5" /> Find Email
+                     </button>
+                   )}
+                 </div>
+               </div>
 
-              {/* CRM Lead Notes */}
-              <div>
-                <h4 className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Lead Notes</h4>
-                <div className="flex flex-col gap-2">
-                  <textarea
-                    rows={4}
-                    placeholder="Add manual notes about this lead (e.g. call summary, response details...)"
-                    className="w-full rounded-md border border-border p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 bg-white placeholder:text-muted/50 text-text resize-none"
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                  />
-                  <Button 
-                    size="sm" 
-                    onClick={handleSaveNotes} 
-                    loading={updateLead.isPending}
-                    className="self-end animate-fade-in"
-                  >
-                    Save Notes
-                  </Button>
-                </div>
-              </div>
+               {/* SMS Compose */}
+               {lead.phone && (
+                 <div className="bg-white border border-border rounded-xl p-4">
+                   <p className="text-xs font-bold text-text mb-2">Send SMS</p>
+                   <textarea
+                     rows={2}
+                     className="w-full text-sm border border-border rounded-md px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-primary/40"
+                     placeholder="Type your SMS message..."
+                     value={smsText}
+                     onChange={e => setSmsText(e.target.value)}
+                     maxLength={160}
+                   />
+                   <div className="flex justify-between items-center mt-2">
+                     <span className="text-[10px] text-muted">{smsText.length}/160</span>
+                     <Button
+                       size="sm"
+                       loading={smsSending}
+                       disabled={!smsText.trim()}
+                       onClick={async () => {
+                         setSmsSending(true);
+                         await fetch(`/api/leads/${lead.id}/sms`, {
+                           method: "POST",
+                           headers: { "Content-Type": "application/json" },
+                           body: JSON.stringify({ message: smsText }),
+                         });
+                         setSmsText("");
+                         setSmsSending(false);
+                       }}
+                     >
+                       Send SMS
+                     </Button>
+                   </div>
+                 </div>
+               )}
+
+               {/* Call Script Generator */}
+               {lead.phone && (
+                 <button
+                   onClick={async () => {
+                     setLoadingScript(true);
+                     const res = await fetch(`/api/leads/${lead.id}/call-script`, { method: "POST" });
+                     setCallScript(await res.json());
+                     setLoadingScript(false);
+                   }}
+                   disabled={loadingScript}
+                   className="text-xs flex items-center gap-1 text-primary hover:underline cursor-pointer"
+                 >
+                   {loadingScript ? "Generating..." : "🎯 Generate Call Script"}
+                 </button>
+               )}
+
+               {callScript && (
+                 <div className="bg-white border border-border rounded-xl p-4 flex flex-col gap-3">
+                   <p className="text-xs font-bold text-text">📞 Cold Call Script</p>
+                   {[
+                     { label: "Opening", key: "opening" },
+                     { label: "Pitch", key: "pitch" },
+                     { label: "Objection Handler", key: "objectionHandling" },
+                     { label: "CTA", key: "cta" },
+                   ].map(({ label, key }) => (
+                     <div key={key}>
+                       <p className="text-[10px] font-bold uppercase text-muted mb-0.5">{label}</p>
+                       <p className="text-xs text-text leading-relaxed">{callScript[key]}</p>
+                     </div>
+                   ))}
+                 </div>
+               )}
+
+               {/* Sales Proposal Generator */}
+               <a
+                 href={`/leads/${lead.id}/pitch`}
+                 target="_blank"
+                 className="flex items-center gap-1.5 text-xs text-primary hover:underline cursor-pointer"
+               >
+                 <FileText className="w-3.5 h-3.5" /> Generate Sales Proposal
+               </a>
+
+               {/* Decision Maker (from enrichment) */}
+               {lead.decisionMakerName && (
+                 <div className="bg-white rounded-xl border border-border p-4">
+                   <p className="text-xs font-bold text-muted uppercase mb-2">Decision Maker</p>
+                   <div className="flex items-center gap-3">
+                     <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+                       <User className="w-4 h-4 text-primary" />
+                     </div>
+                     <div>
+                       <p className="text-sm font-semibold text-text">{lead.decisionMakerName}</p>
+                       {lead.decisionMakerTitle && <p className="text-xs text-muted">{lead.decisionMakerTitle}</p>}
+                       {lead.decisionMakerLinkedIn && (
+                         <a href={lead.decisionMakerLinkedIn} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline">
+                           LinkedIn →
+                         </a>
+                       )}
+                     </div>
+                   </div>
+                   <p className="text-[10px] text-muted mt-2">Found via Hunter.io enrichment</p>
+                 </div>
+               )}
+
+               {/* Domain Expiry Warning */}
+               {lead.domainExpiresInDays != null && lead.domainExpiresInDays <= 90 && (
+                 <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                   <AlertTriangle className="w-4 h-4 text-red-500" />
+                   <p className="text-xs text-red-700 font-semibold">Domain expires in {lead.domainExpiresInDays} days!</p>
+                 </div>
+               )}
+
+               {/* Review Insight */}
+               {lead.reviewPitchAngle && (
+                 <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                   <p className="text-xs font-bold text-amber-700 mb-1">💡 AI Review Insight</p>
+                   <p className="text-xs text-amber-700">{lead.reviewPitchAngle}</p>
+                   {lead.reviewPainPoints && (
+                     <ul className="mt-2 flex flex-col gap-0.5">
+                       {(lead.reviewPainPoints as string[]).map((p, i) => (
+                         <li key={i} className="text-[10px] text-amber-600 flex gap-1"><span>•</span>{p}</li>
+                       ))}
+                     </ul>
+                   )}
+                 </div>
+               )}
+
+               {/* Task Panel */}
+               <div className="bg-white border border-border rounded-xl p-4">
+                 <TaskPanel leadId={lead.id} />
+               </div>
+
+               {/* CRM Lead Notes */}
+               <div>
+                 <h4 className="text-xs font-semibold text-muted uppercase tracking-wider mb-2">Lead Notes</h4>
+                 <div className="flex flex-col gap-2">
+                   <textarea
+                     rows={4}
+                     placeholder="Add manual notes about this lead (e.g. call summary, response details...)"
+                     className="w-full rounded-md border border-border p-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 bg-white placeholder:text-muted/50 text-text resize-none"
+                     value={notes}
+                     onChange={(e) => setNotes(e.target.value)}
+                   />
+                   <Button 
+                     size="sm" 
+                     onClick={handleSaveNotes} 
+                     loading={updateLead.isPending}
+                     className="self-end animate-fade-in"
+                   >
+                     Save Notes
+                   </Button>
+                 </div>
+               </div>
 
               {/* Activity Timeline */}
               <div>

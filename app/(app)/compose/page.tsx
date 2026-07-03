@@ -3,9 +3,10 @@
 import { Button } from "@/components/ui/Button";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Sparkles, Send, RefreshCw, ChevronRight } from "lucide-react";
+import { Sparkles, Send, RefreshCw, ChevronRight, Plus } from "lucide-react";
 import { StatusBadge } from "@/components/leads/StatusBadge";
 import { cn } from "@/lib/utils";
+import { SequenceBuilder } from "@/components/campaigns/SequenceBuilder";
 
 interface Lead { id: number; name: string; email: string | null; websiteStatus: string; category: string | null; }
 interface Draft { id: number; leadId: number; subject: string; body: string; status: string; editedByUser: boolean; lead: { name: string; email: string | null; websiteStatus: string; category: string | null } }
@@ -19,6 +20,7 @@ export default function ComposePage() {
   const [activeDraft, setActiveDraft] = useState<Draft | null>(null);
   const [emailAccountId, setEmailAccountId] = useState<number | null>(null);
   const [campaignName, setCampaignName] = useState("");
+  const [isSequence, setIsSequence] = useState(false);
 
   const { data: leadsData } = useQuery({ queryKey: ["leads", "compose"], queryFn: () => fetch("/api/leads?pageSize=200").then(r => r.json()) });
   const { data: accounts } = useQuery<EmailAccount[]>({ queryKey: ["email-accounts"], queryFn: () => fetch("/api/email-accounts").then(r => r.json()) });
@@ -35,13 +37,14 @@ export default function ComposePage() {
     mutationFn: () => fetch("/api/campaigns", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: campaignName || `Campaign ${new Date().toLocaleDateString()}`,
-        templateSubject: "Quick question about your business",
-        templateBody: "Hi {{name}},\n\nI noticed your business could benefit from a professional website...",
-        emailAccountId,
-        leadIds: selectedLeads,
-      }),
+            body: JSON.stringify({
+              name: campaignName || `Campaign ${new Date().toLocaleDateString()}`,
+              templateSubject: "Quick question about your business",
+              templateBody: "Hi {{name}},\n\nI noticed your business could benefit from a professional website...",
+              emailAccountId,
+              leadIds: selectedLeads,
+              isSequence,
+            }),
     }).then(r => r.json()),
     onSuccess: (c: Campaign) => setActiveCampaign(c.id),
   });
@@ -117,10 +120,14 @@ export default function ComposePage() {
               </div>
             </div>
 
-            <Button className="w-full" disabled={selectedLeads.length === 0} onClick={() => createCampaign.mutate()} loading={createCampaign.isPending}>
-              <ChevronRight className="w-4 h-4" />
-              Create Campaign ({selectedLeads.length} leads)
-            </Button>
+             <div className="flex items-center gap-2 mt-2">
+               <input type="checkbox" id="seq" checked={isSequence} onChange={e => setIsSequence(e.target.checked)} className="accent-primary" />
+               <label htmlFor="seq" className="text-xs font-medium text-text cursor-pointer">Email Sequence (multi-step drip)</label>
+             </div>
+             <Button className="w-full" disabled={selectedLeads.length === 0} onClick={() => createCampaign.mutate()} loading={createCampaign.isPending}>
+               <ChevronRight className="w-4 h-4" />
+               Create Campaign ({selectedLeads.length} leads)
+             </Button>
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto">
@@ -145,15 +152,16 @@ export default function ComposePage() {
         )}
 
         {activeCampaign && (
-          <div className="p-3 border-t border-border flex flex-col gap-2">
-            <Button variant="secondary" size="sm" className="w-full" onClick={() => generateAll.mutate()} loading={generateAll.isPending}>
-              <Sparkles className="w-4 h-4" /> Generate All with AI
-            </Button>
-            <Button variant="cta" size="sm" className="w-full" onClick={() => sendAll.mutate()} loading={sendAll.isPending}>
-              <Send className="w-4 h-4" /> Send All
-            </Button>
-          </div>
-        )}
+           <div className="p-3 border-t border-border flex flex-col gap-2">
+             {isSequence && <SequenceBuilder campaignId={activeCampaign} />}
+             <Button variant="secondary" size="sm" className="w-full" onClick={() => generateAll.mutate()} loading={generateAll.isPending}>
+               <Sparkles className="w-4 h-4" /> Generate All with AI
+             </Button>
+             <Button variant="cta" size="sm" className="w-full" onClick={() => sendAll.mutate()} loading={sendAll.isPending}>
+               <Send className="w-4 h-4" /> Send All
+             </Button>
+           </div>
+         )}
       </div>
 
       {/* Right: Draft editor */}
@@ -189,6 +197,11 @@ function DraftEditor({ draft, onSave, onRegenerate, saving, regenerating }: {
 }) {
   const [subject, setSubject] = useState(draft.subject);
   const [body, setBody] = useState(draft.body);
+  const [rankResult, setRankResult] = useState<any>(null);
+  const [toneResult, setToneResult] = useState<any>(null);
+  const [analyzingTone, setAnalyzingTone] = useState(false);
+  const [spamResult, setSpamResult] = useState<any>(null);
+  const [checkingSpam, setCheckingSpam] = useState(false);
 
   return (
     <div className="flex flex-col h-full">
@@ -201,9 +214,44 @@ function DraftEditor({ draft, onSave, onRegenerate, saving, regenerating }: {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="secondary" size="sm" onClick={onRegenerate} loading={regenerating}>
-            <RefreshCw className="w-3.5 h-3.5" /> Regenerate
-          </Button>
+           <Button variant="secondary" size="sm" onClick={onRegenerate} loading={regenerating}>
+             <RefreshCw className="w-3.5 h-3.5" /> Regenerate
+           </Button>
+           <Button
+              variant="secondary"
+              size="sm"
+              onClick={async () => {
+                setAnalyzingTone(true);
+                const res = await fetch("/api/tools/analyze-tone", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ subject, body }),
+                });
+                setToneResult(await res.json());
+                setAnalyzingTone(false);
+              }}
+              loading={analyzingTone}
+            >
+              🎯 Analyze Tone
+            </Button>
+           <Button
+              variant="secondary"
+              size="sm"
+              onClick={async () => {
+                setCheckingSpam(true);
+                setSpamResult(null);
+                const res = await fetch("/api/tools/spam-score", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ subject, body }),
+                });
+                setSpamResult(await res.json());
+                setCheckingSpam(false);
+              }}
+              loading={checkingSpam}
+            >
+              🚫 Check Spam
+            </Button>
           <Button size="sm" onClick={() => onSave(subject, body)} loading={saving}>
             Save
           </Button>
@@ -211,14 +259,46 @@ function DraftEditor({ draft, onSave, onRegenerate, saving, regenerating }: {
       </div>
 
       <div className="flex-1 p-6 flex flex-col gap-4 overflow-y-auto">
-        <div>
-          <label className="text-sm font-medium text-text block mb-1">Subject</label>
-          <input
-            className="w-full h-10 rounded-md border border-border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 bg-white"
-            value={subject}
-            onChange={e => setSubject(e.target.value)}
-          />
-        </div>
+         <div>
+           <label className="text-sm font-medium text-text block mb-1">Subject</label>
+           <input
+             className="w-full h-10 rounded-md border border-border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 bg-white"
+             value={subject}
+             onChange={e => setSubject(e.target.value)}
+           />
+           {subject.includes("|||") && (
+             <button
+               onClick={async () => {
+                 const subjects = subject.split("|||").map(s => s.trim());
+                 const res = await fetch("/api/tools/rank-subjects", {
+                   method: "POST",
+                   headers: { "Content-Type": "application/json" },
+                   body: JSON.stringify({ subjects, businessName: draft.lead.name }),
+                 });
+                 setRankResult(await res.json());
+               }}
+               className="text-xs text-primary hover:underline mt-1"
+             >
+               🏆 Rank these subject lines
+             </button>
+           )}
+           {rankResult && (
+             <div className="mt-2 bg-background border border-border rounded-lg p-3">
+               <p className="text-xs font-semibold text-text mb-2">Subject Line Ranking</p>
+               {rankResult.map((item: any, i: number) => (
+                 <div key={i} className="mb-2 last:mb-0">
+                   <div className="flex items-center gap-2">
+                     <span className="w-5 h-5 rounded-full bg-primary text-white text-xs flex items-center justify-center">
+                       {item.rank}
+                     </span>
+                     <span className="text-xs font-medium text-text">{item.subject}</span>
+                   </div>
+                   <p className="text-[10px] text-muted ml-7">{item.reason}</p>
+                 </div>
+               ))}
+             </div>
+           )}
+         </div>
         <div className="flex-1 flex flex-col">
           <label className="text-sm font-medium text-text block mb-1">Body</label>
           <textarea
@@ -227,9 +307,97 @@ function DraftEditor({ draft, onSave, onRegenerate, saving, regenerating }: {
             onChange={e => setBody(e.target.value)}
           />
         </div>
-        <p className="text-xs text-muted">
-          Variables: <code className="bg-background px-1 rounded">{"{{name}}"}</code> · <code className="bg-background px-1 rounded">{"{{city}}"}</code> · <code className="bg-background px-1 rounded">{"{{category}}"}</code>
-        </p>
+         <p className="text-xs text-muted">
+            Variables: <code className="bg-background px-1 rounded">{`{{name}}`}</code> · <code className="bg-background px-1 rounded">{`{{city}}`}</code> · <code className="bg-background px-1 rounded">{`{{category}}`}</code>
+         </p>
+          {toneResult && (
+            <div className="mt-4 bg-background border border-border rounded-lg p-3">
+              <p className="text-xs font-semibold text-text mb-2">Tone Analysis</p>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xs font-medium">Score:</span>
+                <span className={`text-xs font-bold ${
+                  toneResult.score >= 75 ? 'text-emerald-600' : 
+                  toneResult.score >= 50 ? 'text-amber-600' : 'text-red-600'
+                }`}>
+                  {toneResult.score}/100
+                </span>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                  toneResult.score >= 75 ? 'bg-emerald-100 text-emerald-800' : 
+                  toneResult.score >= 50 ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'
+                }`}>
+                  {toneResult.verdict.replace(/_/g, " ").toUpperCase()}
+                </span>
+              </div>
+              {toneResult.issues?.length > 0 && (
+                <div className="mb-2">
+                  <p className="text-xs font-medium text-text mb-1">Issues:</p>
+                  <ul className="text-xs text-muted space-y-1">
+                    {toneResult.issues.map((issue: string, i: number) => (
+                      <li key={i} className="flex items-start gap-1">
+                        <span>⚠️</span> {issue}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {toneResult.suggestions?.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-text mb-1">Suggestions:</p>
+                  <ul className="text-xs text-muted space-y-1">
+                    {toneResult.suggestions.map((suggestion: string, i: number) => (
+                      <li key={i} className="flex items-start gap-1">
+                        <span>💡</span> {suggestion}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
+          {spamResult && (
+            <div className="mt-4 bg-background border border-border rounded-lg p-3">
+              <p className="text-xs font-semibold text-text mb-2">Spam Score Check</p>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xs font-medium">Risk Score:</span>
+                <span className={`text-xs font-bold ${
+                  spamResult.score <= 20 ? 'text-emerald-600' : 
+                  spamResult.score <= 50 ? 'text-amber-600' : 'text-red-600'
+                }`}>
+                  {spamResult.score}/100
+                </span>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${
+                  spamResult.score <= 20 ? 'bg-emerald-100 text-emerald-800' : 
+                  spamResult.score <= 50 ? 'bg-amber-100 text-amber-800' : 'bg-red-100 text-red-800'
+                }`}>
+                  {spamResult.score <= 20 ? 'LOW RISK' : spamResult.score <= 50 ? 'MEDIUM' : 'HIGH RISK'}
+                </span>
+              </div>
+              {spamResult.flags?.length > 0 && (
+                <div className="mb-2">
+                  <p className="text-xs font-medium text-text mb-1">Flags:</p>
+                  <ul className="text-xs text-muted space-y-1">
+                    {spamResult.flags.map((flag: string, i: number) => (
+                      <li key={i} className="flex items-start gap-1">
+                        <span>🚩</span> {flag}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {spamResult.suggestions?.length > 0 && (
+                <div>
+                  <p className="text-xs font-medium text-text mb-1">Suggestions:</p>
+                  <ul className="text-xs text-muted space-y-1">
+                    {spamResult.suggestions.map((s: string, i: number) => (
+                      <li key={i} className="flex items-start gap-1">
+                        <span>💡</span> {s}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          )}
       </div>
     </div>
   );

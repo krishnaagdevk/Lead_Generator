@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "build": "prisma generate && next build",
     "start": "next start",
     "typecheck": "tsc --noEmit"
@@ -13,10 +13,14 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@googlemaps/google-maps-services-js": "^3.4.2",
+    "@notionhq/client": "^5.22.0",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
+    "@react-google-maps/api": "^2.20.8",
+    "@slack/web-api": "^7.18.0",
     "@tanstack/react-query": "^5.101.1",
     "@types/pg": "^8.20.0",
+    "axios": "^1.18.1",
     "bcryptjs": "^3.0.3",
     "cheerio": "^1.2.0",
     "clsx": "^2.1.1",
@@ -30,7 +34,9 @@
     "react": "19.2.4",
     "react-dom": "19.2.4",
     "stripe": "^22.3.0",
-    "tailwind-merge": "^3.6.0"
+    "tailwind-merge": "^3.6.0",
+    "twilio": "^6.0.2",
+    "whois-parsed-v2": "^1.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

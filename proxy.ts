@@ -5,7 +5,7 @@ const SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || "dev-secret-change-in-production"
 );
 
-const PUBLIC = ["/login", "/signup", "/api/auth/login", "/api/auth/signup", "/api/track"];
+const PUBLIC = ["/login", "/signup", "/api/auth/login", "/api/auth/signup", "/api/track", "/guide"];
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;

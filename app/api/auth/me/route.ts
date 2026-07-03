@@ -9,7 +9,7 @@ export async function GET() {
 
   const user = await prisma.user.findUnique({
     where: { id: session.userId },
-    select: { id: true, email: true, plan: true, usageLeads: true, usageAiCalls: true, role: true },
+    select: { id: true, email: true, plan: true, usageLeads: true, usageAiCalls: true, role: true, calendlyUrl: true, slackBotToken: true, slackChannelId: true, webhookUrl: true, webhookEnabled: true, brandName: true, brandLogo: true, brandColor: true, whiteLabel: true },
   });
   if (!user) return NextResponse.json({ error: "Not found" }, { status: 404 });
   return NextResponse.json(user);
@@ -62,7 +62,7 @@ export async function PATCH(req: NextRequest) {
     const updated = await prisma.user.update({
       where: { id: session.userId },
       data: updateData,
-      select: { id: true, email: true, plan: true, usageLeads: true, usageAiCalls: true, role: true },
+    select: { id: true, email: true, plan: true, usageLeads: true, usageAiCalls: true, role: true, calendlyUrl: true, slackBotToken: true, slackChannelId: true, webhookUrl: true, webhookEnabled: true, brandName: true, brandLogo: true, brandColor: true, whiteLabel: true },
     });
 
     return NextResponse.json(updated);
