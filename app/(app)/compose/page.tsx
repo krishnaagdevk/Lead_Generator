@@ -19,6 +19,7 @@ export default function ComposePage() {
   const [activeCampaign, setActiveCampaign] = useState<number | null>(null);
   const [activeDraft, setActiveDraft] = useState<Draft | null>(null);
   const [emailAccountId, setEmailAccountId] = useState<number | null>(null);
+  const [gmailAddress, setGmailAddress] = useState<string>("");
   const [campaignName, setCampaignName] = useState("");
   const [isSequence, setIsSequence] = useState(false);
 
@@ -37,14 +38,15 @@ export default function ComposePage() {
     mutationFn: () => fetch("/api/campaigns", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              name: campaignName || `Campaign ${new Date().toLocaleDateString()}`,
-              templateSubject: "Quick question about your business",
-              templateBody: "Hi {{name}},\n\nI noticed your business could benefit from a professional website...",
-              emailAccountId,
-              leadIds: selectedLeads,
-              isSequence,
-            }),
+      body: JSON.stringify({
+        name: campaignName || `Campaign ${new Date().toLocaleDateString()}`,
+        templateSubject: "Quick question about your business",
+        templateBody: "Hi {{name}},\n\nI noticed your business could benefit from a professional website...",
+        emailAccountId,
+        gmailAddress: emailAccountId ? undefined : gmailAddress,
+        leadIds: selectedLeads,
+        isSequence,
+      }),
     }).then(r => r.json()),
     onSuccess: (c: Campaign) => setActiveCampaign(c.id),
   });
@@ -56,6 +58,14 @@ export default function ComposePage() {
 
   const sendAll = useMutation({
     mutationFn: () => fetch(`/api/campaigns/${activeCampaign}/send`, { method: "POST" }).then(r => r.json()),
+  });
+
+  const updateCampaignAccount = useMutation({
+    mutationFn: (emailAccountId: number) => fetch(`/api/campaigns/${activeCampaign}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ emailAccountId }),
+    }).then(r => r.json()),
   });
 
   const saveDraft = useMutation({
@@ -102,6 +112,31 @@ export default function ComposePage() {
                 </select>
               </div>
             )}
+            <div>
+              <label className="text-xs font-medium text-muted block mb-1">Or enter Gmail address (must be connected in Settings first)</label>
+              <input
+                type="email"
+                className="w-full h-9 rounded-md border border-border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                placeholder="your@gmail.com"
+                value={gmailAddress}
+                onChange={e => setGmailAddress(e.target.value)}
+              />
+              <p className="text-xs text-muted mt-1">Note: You must connect this Gmail account in Settings first for sending to work.</p>
+            </div>
+            
+            {activeCampaign && accounts && accounts.length > 0 && (
+              <div>
+                <label className="text-xs font-medium text-muted block mb-1">Campaign Gmail Account</label>
+                <select
+                  className="w-full h-9 rounded-md border border-border px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40"
+                  value={drafts?.[0]?.campaign?.emailAccountId ?? ""}
+                  onChange={e => updateCampaignAccount.mutate(Number(e.target.value))}
+                >
+                  <option value="">Select Gmail account</option>
+                  {accounts.map(a => <option key={a.id} value={a.id}>{a.gmailAddress}</option>)}
+                </select>
+              </div>
+            )}
 
             <div>
               <div className="flex items-center justify-between mb-1">
@@ -124,10 +159,13 @@ export default function ComposePage() {
                <input type="checkbox" id="seq" checked={isSequence} onChange={e => setIsSequence(e.target.checked)} className="accent-primary" />
                <label htmlFor="seq" className="text-xs font-medium text-text cursor-pointer">Email Sequence (multi-step drip)</label>
              </div>
-             <Button className="w-full" disabled={selectedLeads.length === 0} onClick={() => createCampaign.mutate()} loading={createCampaign.isPending}>
-               <ChevronRight className="w-4 h-4" />
-               Create Campaign ({selectedLeads.length} leads)
-             </Button>
+              <Button className="w-full" disabled={selectedLeads.length === 0 || (!emailAccountId && !gmailAddress)} onClick={() => createCampaign.mutate()} loading={createCampaign.isPending}>
+                <ChevronRight className="w-4 h-4" />
+                Create Campaign ({selectedLeads.length} leads)
+              </Button>
+              {!emailAccountId && !gmailAddress && (
+                <p className="text-xs text-red-500 mt-1">Please select a Gmail account or enter your Gmail address</p>
+              )}
           </div>
         ) : (
           <div className="flex-1 overflow-y-auto">
@@ -172,6 +210,7 @@ export default function ComposePage() {
             draft={activeDraft}
             onSave={(subject, body) => saveDraft.mutate({ id: activeDraft.id, subject, body })}
             onRegenerate={() => regenerate.mutate(activeDraft.id)}
+            onSent={() => { refetchDrafts(); }}
             saving={saveDraft.isPending}
             regenerating={regenerate.isPending}
           />
@@ -188,10 +227,11 @@ export default function ComposePage() {
   );
 }
 
-function DraftEditor({ draft, onSave, onRegenerate, saving, regenerating }: {
+function DraftEditor({ draft, onSave, onRegenerate, onSent, saving, regenerating }: {
   draft: Draft;
   onSave: (subject: string, body: string) => void;
   onRegenerate: () => void;
+  onSent?: () => void;
   saving: boolean;
   regenerating: boolean;
 }) {
@@ -202,6 +242,27 @@ function DraftEditor({ draft, onSave, onRegenerate, saving, regenerating }: {
   const [analyzingTone, setAnalyzingTone] = useState(false);
   const [spamResult, setSpamResult] = useState<any>(null);
   const [checkingSpam, setCheckingSpam] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
+
+  const handleSendViaGmail = async () => {
+    setSending(true);
+    setSendError(null);
+    onSave(subject, body);
+    try {
+      const res = await fetch(`/api/drafts/${draft.id}/send`, { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json();
+        setSendError(data.error || "Failed to send");
+      } else {
+        onSent?.();
+      }
+    } catch {
+      setSendError("Network error");
+    } finally {
+      setSending(false);
+    }
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -252,6 +313,11 @@ function DraftEditor({ draft, onSave, onRegenerate, saving, regenerating }: {
             >
               🚫 Check Spam
             </Button>
+          {draft.status !== "sent" && (
+            <Button variant="cta" size="sm" onClick={handleSendViaGmail} loading={sending}>
+              <Send className="w-3.5 h-3.5" /> Send via Gmail
+            </Button>
+          )}
           <Button size="sm" onClick={() => onSave(subject, body)} loading={saving}>
             Save
           </Button>
@@ -352,6 +418,11 @@ function DraftEditor({ draft, onSave, onRegenerate, saving, regenerating }: {
                   </ul>
                 </div>
               )}
+            </div>
+          )}
+          {sendError && (
+            <div className="mt-2 bg-red-50 border border-red-200 rounded-lg p-3">
+              <p className="text-xs font-medium text-red-700">Failed to send: {sendError}</p>
             </div>
           )}
           {spamResult && (

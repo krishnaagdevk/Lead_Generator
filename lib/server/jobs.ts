@@ -41,27 +41,7 @@ export async function runSearchJob(jobId: number): Promise<void> {
     const user = await prisma.user.findUnique({ where: { id: job.userId } });
     if (!user) return;
 
-    const PLAN_LIMITS: Record<string, number> = {
-      free: 50,
-      starter: 1000,
-      pro: 10000,
-      agency: 99999,
-    };
-    const maxLeads = PLAN_LIMITS[user.plan] ?? PLAN_LIMITS.free;
-    const remainingLeads = Math.max(0, maxLeads - user.usageLeads);
 
-    if (remainingLeads <= 0) {
-      await prisma.searchJob.update({
-        where: { id: jobId },
-        data: {
-          status: SearchStatus.done,
-          totalFound: 0,
-          completedAt: new Date(),
-          error: "Plan limit reached. Upgrade to fetch more leads.",
-        },
-      });
-      return;
-    }
 
     const gq = job.geoQuery as GeoQuery;
     let rawPlaces: unknown[] = [];
@@ -120,7 +100,7 @@ export async function runSearchJob(jobId: number): Promise<void> {
     const combinedPlaces = await Promise.all(detailsPromises);
 
     for (const raw of combinedPlaces) {
-      if (count >= remainingLeads) break;
+  
       const norm = normalizePlace(raw as Record<string, unknown>);
       if (!norm.placeId || existingIds.has(norm.placeId as string)) continue;
       existingIds.add(norm.placeId as string);
@@ -143,10 +123,7 @@ export async function runSearchJob(jobId: number): Promise<void> {
     }
 
     await prisma.lead.createMany({ data: newLeads });
-    await prisma.user.update({
-      where: { id: job.userId },
-      data: { usageLeads: { increment: newLeads.length } },
-    });
+
 
     // Fire webhook if enabled for this user
     if (user.webhookEnabled && user.webhookUrl) {
@@ -162,7 +139,7 @@ export async function runSearchJob(jobId: number): Promise<void> {
         status: SearchStatus.done, 
         totalFound: count, 
         completedAt: new Date(),
-        ...(count >= remainingLeads && { error: "Plan quota limit reached during search. Upgrade to fetch more leads." }),
+
       },
     });
 
@@ -252,18 +229,7 @@ export async function generateCampaignDrafts(campaignId: number): Promise<void> 
   const user = await prisma.user.findUnique({ where: { id: campaign.userId } });
   if (!user) return;
 
-  const PLAN_AI_LIMITS: Record<string, number> = {
-    free: 0,
-    starter: 500,
-    pro: 5000,
-    agency: 99999,
-  };
-  const maxAi = PLAN_AI_LIMITS[user.plan] ?? PLAN_AI_LIMITS.free;
-  const remainingAi = Math.max(0, maxAi - user.usageAiCalls);
-
-  let generatedCount = 0;
   for (const draft of drafts) {
-    if (generatedCount >= remainingAi) break;
     try {
       const city = draft.lead.address?.split(",").slice(-2, -1)[0]?.trim() ?? "";
       const result = await generateDraft({
@@ -281,11 +247,7 @@ export async function generateCampaignDrafts(campaignId: number): Promise<void> 
         where: { id: draft.id },
         data: { subject: result.subject, body: result.body },
       });
-      await prisma.user.update({
-        where: { id: draft.lead.userId },
-        data: { usageAiCalls: { increment: 1 } },
-      });
-      generatedCount++;
+
     } catch {
       continue;
     }
@@ -294,49 +256,9 @@ export async function generateCampaignDrafts(campaignId: number): Promise<void> 
 
 // ── Bulk Send ─────────────────────────────────────────────────────────────────
 
-export async function getEffectiveDailyLimit(account: {
-  dailyLimit: number;
-  warmupStatus: WarmupStatus;
-  warmupDay: number;
-}): Promise<number> {
-  if (account.warmupStatus === WarmupStatus.active) {
-    return Math.min(account.dailyLimit, 5 + (account.warmupDay - 1) * 5);
-  }
-  return account.dailyLimit;
-}
 
-export async function checkAndResetDailyLimit(accountId: number): Promise<any> {
-  const account = await prisma.emailAccount.findUnique({ where: { id: accountId } });
-  if (!account) return null;
 
-  const now = new Date();
-  const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-  if (account.lastResetAt < oneDayAgo) {
-    let newWarmupDay = account.warmupDay;
-    let newWarmupStatus = account.warmupStatus;
-
-    if (account.warmupStatus === WarmupStatus.active) {
-      newWarmupDay += 1;
-      const nextLimit = 5 + (newWarmupDay - 1) * 5;
-      if (nextLimit >= account.dailyLimit) {
-        newWarmupStatus = WarmupStatus.completed;
-      }
-    }
-
-    return prisma.emailAccount.update({
-      where: { id: accountId },
-      data: {
-        dailySent: 0,
-        lastResetAt: now,
-        warmupDay: newWarmupDay,
-        warmupStatus: newWarmupStatus,
-      },
-    });
-  }
-
-  return account;
-}
 
 export async function sendCampaign(campaignId: number): Promise<void> {
   const campaign = await prisma.campaign.findUnique({
@@ -363,12 +285,6 @@ export async function sendCampaign(campaignId: number): Promise<void> {
       await prisma.emailDraft.update({ where: { id: draft.id }, data: { status: DraftStatus.skipped } });
       continue;
     }
-
-    const account = await checkAndResetDailyLimit(campaign.emailAccount.id);
-    if (!account) break;
-
-    const effectiveLimit = await getEffectiveDailyLimit(account);
-    if (account.dailySent >= effectiveLimit) break;
 
     try {
       const token = crypto.randomUUID().replace(/-/g, "");

@@ -7,12 +7,7 @@ datasource db {
   provider = "postgresql"
 }
 
-enum Plan {
-  free
-  starter
-  pro
-  agency
-}
+
 
 enum WebsiteStatus {
   no_website
@@ -73,11 +68,7 @@ enum SuppressionReason {
   spam_complaint
 }
 
-enum WarmupStatus {
-  inactive
-  active
-  completed
-}
+
 
 model SmsLog {
   id        Int      @id @default(autoincrement())
@@ -119,12 +110,7 @@ model User {
   id               Int            @id @default(autoincrement())
   email            String         @unique
   passwordHash     String
-  plan             Plan           @default(free)
-  usageLeads       Int            @default(0)
-  usageAiCalls     Int            @default(0)
-  stripeCustomerId String?
-  parentId         Int?
-  role             String         @default("owner")
+
   createdAt        DateTime       @default(now())
   
   // Calendly & Integrations
@@ -241,13 +227,7 @@ model EmailAccount {
   userId              Int
   gmailAddress        String
   oauthTokenEncrypted String
-  dailyLimit          Int          @default(100)
-  dailySent           Int          @default(0)
   isDefault           Boolean      @default(false)
-  lastResetAt         DateTime     @default(now())
-  warmupStatus        WarmupStatus @default(inactive)
-  warmupDay           Int          @default(1)
-  warmupStartDate     DateTime?
   createdAt           DateTime     @default(now())
   user                User         @relation(fields: [userId], references: [id])
   campaigns           Campaign[]
