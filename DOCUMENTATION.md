@@ -194,7 +194,9 @@ model User {
   plan             Plan       @default(free)
   usageLeads       Int        @default(0)
   usageAiCalls     Int        @default(0)
-  stripeCustomerId String?
+  razorpayCustomerId    String?
+  razorpaySubscriptionId String?
+  razorpayPlanStatus    String?
   parentId         Int?
   role             String     @default("owner")
   createdAt        DateTime   @default(now())

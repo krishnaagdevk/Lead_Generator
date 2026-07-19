@@ -21,7 +21,7 @@ async function runTask(taskType: string, payload: any): Promise<void> {
       await calculateLeadScore(payload.leadId);
       break;
     case "ai_draft":
-      await generateCampaignDrafts(payload.campaignId);
+      await generateCampaignDrafts(payload.campaignId, payload.model);
       break;
     case "send":
       await sendCampaign(payload.campaignId);
@@ -49,6 +49,10 @@ async function runTask(taskType: string, payload: any): Promise<void> {
     case "process_sequences":
       const { processSequences } = await import("./jobs");
       await processSequences();
+      break;
+    case "agent_run":
+      const { runAgentStep } = await import("./agent/run");
+      await runAgentStep(payload.runId);
       break;
     case "weekly_summary":
       const { sendWeeklySummary } = await import("./jobs");

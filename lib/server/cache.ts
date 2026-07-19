@@ -1,6 +1,6 @@
 import { prisma } from "../db";
 
-const DEFAULT_TTL_SECONDS = 24 * 60 * 60; // 24 hours
+const DEFAULT_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days (reduces redundant Places API billing)
 
 export async function getPlacesCache(key: string): Promise<unknown | null> {
   try {

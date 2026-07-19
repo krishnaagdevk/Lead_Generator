@@ -8,16 +8,13 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { Suspense } from "react";
 import { cn } from "@/lib/utils";
 
+import { useToast } from "@/components/ui/Toast";
+import { PLANS } from "@/lib/config/plans";
+
 interface EmailAccount { id: number; gmailAddress: string; dailyLimit: number; dailySent: number; isDefault: boolean; warmupStatus: string; warmupDay: number; }
 interface User { id: number; email: string; plan: string; usageLeads: number; usageAiCalls: number; }
 interface ApiKey { id: number; name: string; keyPrefix: string; lastUsed: string | null; createdAt: string; }
 
-const PLAN_LIMITS: Record<string, { leads: number; ai: number }> = {
-  free:    { leads: 50,    ai: 0 },
-  starter: { leads: 1000,  ai: 500 },
-  pro:     { leads: 10000, ai: 5000 },
-  agency:  { leads: 99999, ai: 99999 },
-};
 
 function SettingsContent() {
   const params = useSearchParams();
@@ -25,14 +22,15 @@ function SettingsContent() {
   const connected = params.get("connected");
   const error = params.get("error");
   const qc = useQueryClient();
+  const { toast } = useToast();
 
-  const { data: user } = useQuery<User & { 
+  const { data: user } = useQuery<User & {
     calendlyUrl?: string; slackBotToken?: string; slackChannelId?: string;
     webhookUrl?: string; webhookEnabled?: boolean;
     brandName?: string; brandLogo?: string; brandColor?: string; whiteLabel?: boolean;
-  }>({ 
-    queryKey: ["me"], 
-    queryFn: () => fetch("/api/auth/me").then(r => r.json()) 
+  }>({
+    queryKey: ["me"],
+    queryFn: () => fetch("/api/auth/me").then(r => r.json())
   });
   const { data: accounts } = useQuery<EmailAccount[]>({ queryKey: ["email-accounts"], queryFn: () => fetch("/api/email-accounts").then(r => r.json()) });
 
@@ -128,7 +126,7 @@ function SettingsContent() {
 
   const toggleWarmup = useMutation({ mutationFn: async ({ id, warmupStatus }: { id: number; warmupStatus: string }) => { const res = await fetch("/api/email-accounts", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, warmupStatus }) }); if (!res.ok) throw new Error("Failed to update warmup settings"); return res.json(); }, onSuccess: () => qc.invalidateQueries({ queryKey: ["email-accounts"] }) });
 
-  const limits = user ? PLAN_LIMITS[user.plan] ?? PLAN_LIMITS.free : null;
+  const limits = user ? PLANS[user.plan]?.limits ?? PLANS.free.limits : null;
 
   return (
     <div className="p-6 max-w-2xl flex flex-col gap-8">
@@ -177,19 +175,28 @@ function SettingsContent() {
         </form>
       </section>
 
-      {/* Plan Usage */}
-      {user && limits && (
-        <section>
-          <h2 className="text-base font-semibold text-text mb-3">Plan Usage</h2>
-          <div className="bg-white rounded-xl border border-border p-4 flex flex-col gap-4">
-            <UsageBar label="Leads this month" used={user.usageLeads} limit={limits.leads} />
-            <UsageBar label="AI drafts this month" used={user.usageAiCalls} limit={limits.ai} />
-            {user.plan === "free" && (
-              <div className="pt-2 border-t border-border">
-                <p className="text-sm text-muted mb-2">Upgrade for more leads and AI generation</p>
-                <div className="flex gap-2"><Button size="sm" onClick={() => router.push("/pricing")}>View Plans</Button></div>
-              </div>
-            )}
+      {/* Plan & Billing */}
+      {user && (
+        <section className="bg-white rounded-xl border border-border p-6 flex flex-col gap-6">
+          <div>
+            <h2 className="text-base font-semibold text-text">Plans & Billing</h2>
+            <p className="text-xs text-muted mt-1">Manage your subscription, limits, and view your current usage.</p>
+          </div>
+
+          {/* Usage Bars */}
+          {limits && (
+            <div className="flex flex-col gap-4 p-4 rounded-lg bg-background/30 border border-border/50">
+              <h3 className="text-xs font-bold text-muted uppercase">Usage this month</h3>
+              <UsageBar label="Leads found" used={user.usageLeads} limit={limits.leads} />
+              <UsageBar label="AI email drafts" used={user.usageAiCalls} limit={limits.ai} />
+            </div>
+          )}
+
+          <div className="flex items-center justify-between p-4 rounded-lg border border-indigo-100 bg-indigo-50/30">
+            <div>
+              <p className="text-sm font-semibold text-indigo-950">Active Subscription: Free Tier (Unlimited)</p>
+              <p className="text-xs text-muted-foreground mt-0.5">All features are unlocked. Ad-supported.</p>
+            </div>
           </div>
         </section>
       )}

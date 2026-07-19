@@ -6,6 +6,7 @@ import { ExportMenu } from "@/components/leads/ExportMenu";
 import { LeadDetailDrawer } from "@/components/leads/LeadDetailDrawer";
 import { useLeadsQuery, useOfflineDeleteLead, useOfflineBulkDeleteLeads } from "@/hooks/useLeads";
 import { useState } from "react";
+import { useToast } from "@/components/ui/Toast";
 
 interface Filters {
   websiteStatus?: string;
@@ -18,6 +19,7 @@ interface Filters {
 }
 
 export default function LeadsPage() {
+  const { toast } = useToast();
   const [filters, setFilters] = useState<Filters>({});
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number | "all">(50);
@@ -49,7 +51,7 @@ export default function LeadsPage() {
         await bulkDeleteMutation.mutateAsync(selected);
         setSelected([]);
       } catch (err) {
-        alert("Failed to delete leads: " + String(err));
+        toast({ message: "Failed to delete leads: " + String(err), type: "error" });
       }
     }
   };
@@ -101,7 +103,7 @@ export default function LeadsPage() {
                        body: JSON.stringify({ ids: selected }),
                      });
                      const data = await res.json();
-                     alert(`Queued ${data.queued} enrichment jobs`);
+                     toast({ message: `Queued ${data.queued} email enrichment jobs`, type: "success" });
                    }}
                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold border border-border text-text hover:bg-background cursor-pointer"
                  >

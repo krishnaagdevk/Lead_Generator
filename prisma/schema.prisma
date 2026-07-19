@@ -68,7 +68,11 @@ enum SuppressionReason {
   spam_complaint
 }
 
-
+enum WarmupStatus {
+  inactive
+  active
+  completed
+}
 
 model SmsLog {
   id        Int      @id @default(autoincrement())
@@ -113,6 +117,12 @@ model User {
 
   createdAt        DateTime       @default(now())
   
+  // Student Hustle Goals
+  hustleTargetName  String         @default("Build My Dev Setup")
+  hustleTargetPrice Float          @default(1000.00)
+  studentMajor      String?
+  studentUniversity String?
+
   // Calendly & Integrations
   calendlyUrl      String?
   slackBotToken    String?
@@ -126,6 +136,16 @@ model User {
   brandColor       String?
   whiteLabel       Boolean        @default(false)
   
+  parentId              Int?
+  plan                  String         @default("free")
+  usageLeads            Int            @default(0)
+  usageAiCalls          Int            @default(0)
+  usageResetAt          DateTime       @default(now())
+  razorpayCustomerId    String?
+  razorpaySubscriptionId String?
+  razorpayPlanStatus    String?
+  role                  String         @default("owner")
+
   parent           User?          @relation("TeamMembers", fields: [parentId], references: [id])
   teamMembers      User[]         @relation("TeamMembers")
   searchJobs       SearchJob[]
@@ -137,6 +157,7 @@ model User {
   smsLogs          SmsLog[]
   tasks            Task[]
   apiKeys          ApiKey[]
+  agentRuns        AgentRun[]
 }
 
 model SearchJob {
@@ -209,6 +230,14 @@ model Lead {
   dealClosedAt    DateTime? // when was this deal marked Won
   dealNotes       String?   // additional deal notes
   
+  // Student Contract & Field Visiting fields
+  physicalVisits   Int       @default(0)
+  lastVisitedAt    DateTime?
+  contractSignedAt DateTime?
+  contractPrice    Float?
+  contractMilestones Json?   // custom milestone payment array
+  contractType     String?   // "website" | "app" | "both"
+
   user                User                @relation(fields: [userId], references: [id])
   searchJob           SearchJob           @relation(fields: [searchJobId], references: [id])
   emailDrafts         EmailDraft[]
@@ -228,6 +257,12 @@ model EmailAccount {
   gmailAddress        String
   oauthTokenEncrypted String
   isDefault           Boolean      @default(false)
+  dailyLimit          Int          @default(50)
+  dailySent           Int          @default(0)
+  sentResetAt         DateTime     @default(now())
+  warmupStatus        WarmupStatus @default(inactive)
+  warmupDay           Int          @default(0)
+  warmupStartDate     DateTime?
   createdAt           DateTime     @default(now())
   user                User         @relation(fields: [userId], references: [id])
   campaigns           Campaign[]
@@ -371,4 +406,61 @@ model SavedSearch {
   createdAt    DateTime @default(now())
   user         User     @relation(fields: [userId], references: [id])
 }
+
+model RateLimit {
+  key       String   @id
+  count     Int      @default(0)
+  windowEnd DateTime
+
+  @@index([windowEnd])
+}
+
+enum AgentMode {
+  plan_only
+  hitl
+  autonomous
+}
+
+enum AgentStatus {
+  planning
+  running
+  awaiting_approval
+  completed
+  failed
+  cancelled
+}
+
+model AgentRun {
+  id            Int         @id @default(autoincrement())
+  userId        Int
+  goal          String
+  mode          AgentMode   @default(hitl)
+  status        AgentStatus @default(planning)
+  approved      Boolean     @default(false)
+  pendingTool   Json?
+  finalSummary  String?
+  stepCount     Int         @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  user          User        @relation(fields: [userId], references: [id])
+  steps         AgentStep[]
+
+  @@index([userId])
+}
+
+model AgentStep {
+  id        Int       @id @default(autoincrement())
+  runId     Int
+  idx       Int
+  kind      String // thought | tool_call | tool_result | system | approval | summary
+  toolName  String?
+  content   String    @db.Text
+  args      Json?
+  result    Json?
+  createdAt DateTime  @default(now())
+  run       AgentRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId])
+}
+
 

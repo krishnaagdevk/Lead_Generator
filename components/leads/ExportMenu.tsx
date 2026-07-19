@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { Download, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/components/ui/Toast";
 
 export function ExportMenu({ selectedIds }: { selectedIds: number[] }) {
+  const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [exportingSheets, setExportingSheets] = useState(false);
 
@@ -29,7 +31,7 @@ export function ExportMenu({ selectedIds }: { selectedIds: number[] }) {
       }
       window.open(data.url, "_blank");
     } catch (err: any) {
-      alert(err.message || "Google Sheets export failed");
+      toast({ message: err.message || "Google Sheets export failed", type: "error" });
     } finally {
       setExportingSheets(false);
     }

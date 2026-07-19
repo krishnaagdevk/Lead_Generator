@@ -16,7 +16,10 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  const { searchParams } = new URL(_req.url);
+  const model = searchParams.get("model") || undefined;
+
   await prisma.emailDraft.update({ where: { id: Number(id) }, data: { editedByUser: false } });
-  await enqueueJob("ai_draft", { campaignId: draft.campaignId });
+  await enqueueJob("ai_draft", { campaignId: draft.campaignId, model });
   return NextResponse.json({ message: "Regeneration started" });
 }

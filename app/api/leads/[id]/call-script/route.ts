@@ -11,12 +11,15 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   const lead = await prisma.lead.findFirst({ where: { id: Number(id) } });
   if (!lead) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  const { searchParams } = new URL(_req.url);
+  const model = searchParams.get("model") || undefined;
+
   const script = await generateCallScript({
     name: lead.name,
     category: lead.category ?? undefined,
     city: lead.address?.split(",")[1]?.trim(),
     websiteStatus: lead.websiteStatus,
-  });
+  }, model);
 
   return NextResponse.json(script);
 }

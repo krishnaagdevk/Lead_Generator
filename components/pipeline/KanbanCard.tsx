@@ -4,6 +4,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { StatusBadge } from "@/components/leads/StatusBadge";
 import { ChevronLeft, ChevronRight, Mail, Phone } from "lucide-react";
+import { motion } from "framer-motion";
 
 interface Lead {
   id: number;
@@ -34,12 +35,15 @@ export function KanbanCard({ lead, stageIndex, totalStages, onMoveLeft, onMoveRi
   };
 
   return (
-    <div
+    <motion.div
       ref={setNodeRef}
       style={style}
       {...attributes}
       {...listeners}
-      className="bg-white rounded-lg border border-border p-3 cursor-grab active:cursor-grabbing shadow-card hover:shadow-md hover:border-primary/20 transition-all duration-200"
+      whileHover={{ scale: 1.02, y: -2 }}
+      whileTap={{ scale: 0.98, rotate: 1 }}
+      transition={{ duration: 0.15 }}
+      className="bg-white rounded-lg border border-border p-3 cursor-grab active:cursor-grabbing shadow-card hover:shadow-md hover:border-primary/20"
     >
       <div className="flex items-start justify-between gap-1">
         <p className="font-medium text-text text-sm leading-tight break-words flex-1 min-w-0">{lead.name}</p>
@@ -83,6 +87,6 @@ export function KanbanCard({ lead, stageIndex, totalStages, onMoveLeft, onMoveRi
            </span>
          )}
        </div>
-    </div>
+     </motion.div>
   );
 }

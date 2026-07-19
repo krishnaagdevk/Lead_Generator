@@ -2,13 +2,16 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { BarChart3, BookOpen, Layers, LogOut, Mail, Map, Settings, Users, Menu, X } from "lucide-react";
+import { BarChart3, BookOpen, Bot, Layers, LogOut, Mail, Map, Settings, Users, Menu, X, Compass, Trophy } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
 const NAV = [
   { href: "/search",    icon: Map,       label: "Search" },
+  { href: "/agent",     icon: Bot,       label: "Agent" },
   { href: "/leads",     icon: Users,     label: "Leads" },
+  { href: "/scout",     icon: Compass,   label: "Street-Scout" },
+  { href: "/hustle",    icon: Trophy,    label: "Hustle Hub" },
   { href: "/compose",   icon: Mail,      label: "Compose" },
   { href: "/pipeline",  icon: Layers,    label: "Pipeline" },
   { href: "/analytics", icon: BarChart3, label: "Analytics" },

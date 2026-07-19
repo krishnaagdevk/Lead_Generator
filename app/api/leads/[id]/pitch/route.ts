@@ -11,6 +11,9 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
   const lead = await prisma.lead.findFirst({ where: { id: Number(id) } });
   if (!lead) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  const { searchParams } = new URL(_req.url);
+  const model = searchParams.get("model") || undefined;
+
   const pitch = await generatePitch({
     name: lead.name,
     category: lead.category ?? undefined,
@@ -19,7 +22,7 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ id
     rating: lead.rating ?? undefined,
     reviewPainPoints: lead.reviewPainPoints as string[] ?? undefined,
     reviewPitchAngle: lead.reviewPitchAngle ?? undefined,
-  });
+  }, model);
 
   return NextResponse.json(pitch);
 }

@@ -3,12 +3,14 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
 import { useOfflineUpdateLead } from "@/hooks/useLeads";
-import { X, Loader2, Star, Mail, Phone, Globe, MapPin, MessageCircle, Search, User, AlertTriangle, FileText } from "lucide-react";
+import { X, Loader2, Star, Mail, Phone, Globe, MapPin, MessageCircle, Search, User, AlertTriangle, FileText, Sparkles, GraduationCap, HelpCircle, FileCheck } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 import { StatusBadge } from "./StatusBadge";
 import { TaskPanel } from "./TaskPanel";
 import { ContactBadge } from "./ContactBadge";
+import { MockupPreview } from "./MockupPreview";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface LeadDetailDrawerProps {
   leadId: number | null;
@@ -23,24 +25,33 @@ export function LeadDetailDrawer({ leadId, onClose }: LeadDetailDrawerProps) {
   const [callScript, setCallScript] = useState<any>(null);
   const [loadingScript, setLoadingScript] = useState(false);
 
-  const { data: lead, isLoading } = useQuery({
+  // Student Hustle State
+  const [mockupData, setMockupData] = useState<any>(null);
+  const [loadingMockup, setLoadingMockup] = useState(false);
+  const [customObjection, setCustomObjection] = useState("");
+  const [objectionResponse, setObjectionResponse] = useState<any>(null);
+  const [loadingObjection, setLoadingObjection] = useState(false);
+
+  const { data: fetchedLead, isLoading } = useQuery({
     queryKey: ["lead-details", leadId],
     queryFn: () => fetch(`/api/leads/${leadId}`).then((r) => r.json()),
     enabled: !!leadId,
   });
 
   const [dealValue, setDealValue] = useState<string>("");
+  const [activeLead, setActiveLead] = useState<any>(null);
 
   useEffect(() => {
-    if (lead) {
-      setDealValue(String(lead.dealValue ?? ""));
-      setNotes(lead.notes || "");
+    if (fetchedLead && !fetchedLead.error) {
+      setActiveLead(fetchedLead);
+      setDealValue(String(fetchedLead.dealValue ?? ""));
+      setNotes(fetchedLead.notes || "");
     }
-  }, [lead]);
+  }, [fetchedLead]);
 
   const updateLead = useOfflineUpdateLead();
 
-  if (!leadId) return null;
+  const lead = fetchedLead || activeLead;
 
   const timeline: Array<{ id: string; date: Date; label: string; details?: string; iconColor: string }> = [];
 
@@ -103,15 +114,27 @@ export function LeadDetailDrawer({ leadId, onClose }: LeadDetailDrawerProps) {
   };
 
   return (
-    <>
-      {/* Backdrop */}
-      <div 
-        className="fixed inset-0 z-40 bg-black/30 backdrop-blur-xs transition-opacity duration-200" 
-        onClick={onClose} 
-      />
+    <AnimatePresence>
+      {leadId && activeLead && (
+        <>
+          {/* Backdrop */}
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="fixed inset-0 z-40 bg-black/30 backdrop-blur-xs cursor-pointer" 
+            onClick={onClose} 
+          />
 
-      {/* Drawer Container */}
-      <div className="fixed inset-y-0 right-0 z-50 w-full max-w-lg bg-white border-l border-border shadow-2xl flex flex-col h-full animate-slide-in">
+          {/* Drawer Container */}
+          <motion.div 
+            initial={{ x: "100%" }}
+            animate={{ x: 0 }}
+            exit={{ x: "100%" }}
+            transition={{ type: "spring", damping: 30, stiffness: 250 }}
+            className="fixed inset-y-0 right-0 z-50 w-full max-w-lg bg-white border-l border-border shadow-2xl flex flex-col h-full"
+          >
         {/* Header */}
         <div className="px-6 py-4 border-b border-border flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -418,10 +441,150 @@ export function LeadDetailDrawer({ leadId, onClose }: LeadDetailDrawerProps) {
                  </div>
                )}
 
-               {/* Task Panel */}
-               <div className="bg-white border border-border rounded-xl p-4">
-                 <TaskPanel leadId={lead.id} />
-               </div>
+                {/* 🎨 Interactive AI Landing Page Mockup */}
+                <div className="bg-white border border-border rounded-xl p-4 flex flex-col gap-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-primary" /> Visual Selling: AI Mockup
+                      </h4>
+                      <p className="text-[10px] text-muted mt-0.5">Generate a custom web preview to show this business owner in person.</p>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      loading={loadingMockup}
+                      onClick={async () => {
+                        setLoadingMockup(true);
+                        try {
+                          const res = await fetch(`/api/leads/${lead.id}/mockup`, { method: "POST" });
+                          if (res.ok) {
+                            setMockupData(await res.json());
+                          }
+                        } catch (err) {
+                          console.error(err);
+                        } finally {
+                          setLoadingMockup(false);
+                        }
+                      }}
+                    >
+                      {mockupData ? "Regenerate Mockup" : "Generate Mockup"}
+                    </Button>
+                  </div>
+                  {mockupData && (
+                    <MockupPreview businessName={lead.name} mockupData={mockupData} />
+                  )}
+                </div>
+
+                {/* 🧠 AI Objection Buster Coach */}
+                <div className="bg-white border border-border rounded-xl p-4 flex flex-col gap-4">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <GraduationCap className="w-3.5 h-3.5 text-primary" /> Objection Buster AI Coach
+                    </h4>
+                    <p className="text-[10px] text-muted mt-0.5">Get high-confidence reframes for common physical business objections.</p>
+                  </div>
+
+                  {/* Quick Select Buttons */}
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      "Instagram is enough for us.",
+                      "We don't have the budget.",
+                      "Wix/Squarespace is easier.",
+                      "Too busy to care about websites."
+                    ].map((obj) => (
+                      <button
+                        key={obj}
+                        type="button"
+                        onClick={() => setCustomObjection(obj)}
+                        className="text-[10px] bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-600 font-medium transition-colors cursor-pointer"
+                      >
+                        "{obj}"
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Or enter custom objection..."
+                      value={customObjection}
+                      onChange={(e) => setCustomObjection(e.target.value)}
+                      className="flex-1 h-9 rounded-md border border-border px-3 text-xs bg-slate-50/50"
+                    />
+                    <Button
+                      size="sm"
+                      disabled={!customObjection.trim()}
+                      loading={loadingObjection}
+                      onClick={async () => {
+                        setLoadingObjection(true);
+                        try {
+                          const res = await fetch(`/api/leads/${lead.id}/objection-coach`, {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ objection: customObjection })
+                          });
+                          if (res.ok) {
+                            setObjectionResponse(await res.json());
+                          }
+                        } catch (err) {
+                          console.error(err);
+                        } finally {
+                          setLoadingObjection(false);
+                        }
+                      }}
+                    >
+                      Coach Me
+                    </Button>
+                  </div>
+
+                  {objectionResponse && (
+                    <div className="bg-indigo-50/50 border border-indigo-100 rounded-xl p-3.5 flex flex-col gap-3">
+                      <div>
+                        <span className="text-[9px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                          Elite Reframe Comeback
+                        </span>
+                        <p className="text-xs text-slate-800 font-semibold mt-2 leading-relaxed">
+                          "{objectionResponse.comeback}"
+                        </p>
+                      </div>
+                      <div className="border-t border-indigo-100/50 pt-2.5">
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Supporting Proof Point</p>
+                        <p className="text-[11px] text-slate-600 font-medium mt-1">
+                          {objectionResponse.proof}
+                        </p>
+                      </div>
+                      <div className="border-t border-indigo-100/50 pt-2.5">
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Hustler Practice Tip</p>
+                        <p className="text-[11px] text-slate-500 italic mt-1">
+                          {objectionResponse.practiceTip}
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* 📋 1-Click Contracts & Invoices generator */}
+                <div className="bg-white border border-border rounded-xl p-4 flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <FileCheck className="w-3.5 h-3.5 text-primary" /> Contracts & Invoices
+                    </h4>
+                    <p className="text-[10px] text-muted mt-0.5">Prepare ready-to-sign milestones agreement & professional invoice.</p>
+                  </div>
+                  <a
+                    href={`/leads/${lead.id}/docs`}
+                    target="_blank"
+                    className="inline-flex items-center justify-center h-9 px-3 rounded-lg text-xs font-bold bg-primary text-white hover:bg-indigo-700 transition-colors cursor-pointer shadow-xs"
+                  >
+                    Generate Docs
+                  </a>
+                </div>
+
+                {/* Task Panel */}
+                <div className="bg-white border border-border rounded-xl p-4">
+                  <TaskPanel leadId={lead.id} />
+                </div>
 
                {/* CRM Lead Notes */}
                <div>
@@ -472,7 +635,9 @@ export function LeadDetailDrawer({ leadId, onClose }: LeadDetailDrawerProps) {
             </>
           )}
         </div>
-      </div>
+      </motion.div>
     </>
+      )}
+    </AnimatePresence>
   );
 }

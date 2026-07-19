@@ -14,7 +14,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   const drafts = await prisma.emailDraft.findMany({
     where: { campaignId: Number(id) },
-    include: { lead: { select: { name: true, email: true, websiteStatus: true, category: true } } },
+    include: {
+      lead: { select: { id: true, name: true, email: true, websiteStatus: true, category: true, websiteUrl: true, rating: true, reviewCount: true, reviewSentiment: true, reviewPitchAngle: true, address: true } },
+      campaign: { select: { id: true, name: true, status: true, emailAccountId: true } }
+    },
     orderBy: { createdAt: "asc" },
   });
   return NextResponse.json(drafts);

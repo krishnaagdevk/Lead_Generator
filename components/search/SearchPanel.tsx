@@ -8,6 +8,7 @@ import { useState, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { MapView } from "./MapView";
 import { useRouter } from "next/navigation";
+import { useToast } from "@/components/ui/Toast";
 
 type TabId = "radius" | "city" | "polygon" | "multi_city";
 
@@ -48,6 +49,7 @@ const SUGGESTIONS = [
 
 export function SearchPanel() {
   const router = useRouter();
+  const { toast } = useToast();
   const qc = useQueryClient();
   const [tab, setTab] = useState<TabId>("radius");
   const [businessType, setBusinessType] = useState("");
@@ -123,7 +125,7 @@ export function SearchPanel() {
     onSuccess: () => {
       refetchSaved();
     },
-    onError: (err) => alert(err instanceof Error ? err.message : "Failed to save preset"),
+    onError: (err) => toast({ message: err instanceof Error ? err.message : "Failed to save preset", type: "error" }),
   });
 
   const deleteSavedMutation = useMutation({
@@ -135,7 +137,7 @@ export function SearchPanel() {
     onSuccess: () => {
       refetchSaved();
     },
-    onError: (err) => alert(err instanceof Error ? err.message : "Failed to delete preset"),
+    onError: (err) => toast({ message: err instanceof Error ? err.message : "Failed to delete preset", type: "error" }),
   });
 
   const loadSavedSearch = (saved: any) => {
@@ -217,7 +219,7 @@ export function SearchPanel() {
       return res.json() as Promise<SearchJob>;
     },
     onSuccess: (job) => setActiveJobId(job.id),
-    onError: (err) => alert(err instanceof Error ? err.message : "Search failed"),
+    onError: (err) => toast({ message: err instanceof Error ? err.message : "Search failed", type: "error" }),
   });
 
   const isRunning = jobStatus?.status === "running" || jobStatus?.status === "queued";
@@ -459,11 +461,45 @@ export function SearchPanel() {
             </div>
           )}
 
-          {/* Search status */}
+          {/* Search status — smooth background-job animation */}
           {isRunning && (
-            <div className="flex items-center gap-2 text-sm text-primary bg-primary/5 rounded-md p-3">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              <span>Searching... {jobStatus?.totalFound ?? 0} found so far</span>
+            <div className="relative overflow-hidden rounded-xl border border-primary/20 bg-white p-4 shadow-card animate-fade-in">
+              <div className="flex items-center gap-3">
+                <div className="relative w-9 h-9 shrink-0">
+                  <span className="absolute inset-0 rounded-full bg-primary/30 animate-radar" />
+                  <span className="absolute inset-1.5 rounded-full bg-primary/15 flex items-center justify-center">
+                    <Search className="w-4 h-4 text-primary" />
+                  </span>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-text">Searching leads…</p>
+                  <p className="text-xs text-muted truncate">
+                    {jobStatus?.totalFound ?? 0} found · checking websites & scoring in the background
+                  </p>
+                </div>
+                <span className="flex items-center gap-1 text-xs text-primary font-medium shrink-0">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Live
+                </span>
+              </div>
+
+              {/* Indeterminate shimmer bar */}
+              <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-primary/10">
+                <div className="h-full w-1/3 rounded-full bg-primary animate-shimmer" />
+              </div>
+
+              {/* Parallel pipeline chips */}
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {["Finding places", "Checking websites", "Enriching contacts", "Scoring leads"].map((label, i) => (
+                  <span
+                    key={label}
+                    className="inline-flex items-center gap-1.5 rounded-full bg-primary/5 px-2.5 py-1 text-[11px] font-medium text-primary animate-pulse"
+                    style={{ animationDelay: `${i * 250}ms` }}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary" />
+                    {label}
+                  </span>
+                ))}
+              </div>
             </div>
           )}
 

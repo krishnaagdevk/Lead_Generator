@@ -133,13 +133,18 @@ export async function runSearchJob(jobId: number): Promise<void> {
       }).catch(() => {});
     }
 
+    // Increment user lead usage
+    await prisma.user.update({
+      where: { id: job.userId },
+      data: { usageLeads: { increment: count } },
+    });
+
     await prisma.searchJob.update({
       where: { id: jobId },
       data: { 
         status: SearchStatus.done, 
         totalFound: count, 
         completedAt: new Date(),
-
       },
     });
 
@@ -218,7 +223,7 @@ export async function crawlLead(leadId: number): Promise<void> {
 
 // ── AI Drafts ─────────────────────────────────────────────────────────────────
 
-export async function generateCampaignDrafts(campaignId: number): Promise<void> {
+export async function generateCampaignDrafts(campaignId: number, model?: string): Promise<void> {
   const drafts = await prisma.emailDraft.findMany({
     where: { campaignId, status: DraftStatus.pending, editedByUser: false },
     include: { lead: true },
@@ -229,6 +234,7 @@ export async function generateCampaignDrafts(campaignId: number): Promise<void> 
   const user = await prisma.user.findUnique({ where: { id: campaign.userId } });
   if (!user) return;
 
+  let successCount = 0;
   for (const draft of drafts) {
     try {
       const city = draft.lead.address?.split(",").slice(-2, -1)[0]?.trim() ?? "";
@@ -242,15 +248,23 @@ export async function generateCampaignDrafts(campaignId: number): Promise<void> 
       }, {
         reviewPitchAngle: (draft.lead as any).reviewPitchAngle ?? undefined,
         calendlyUrl: user.calendlyUrl ?? undefined,
+        model,
       });
       await prisma.emailDraft.update({
         where: { id: draft.id },
         data: { subject: result.subject, body: result.body },
       });
-
+      successCount++;
     } catch {
       continue;
     }
+  }
+
+  if (successCount > 0) {
+    await prisma.user.update({
+      where: { id: campaign.userId },
+      data: { usageAiCalls: { increment: successCount } },
+    });
   }
 }
 
@@ -676,4 +690,40 @@ export async function sendFollowUpCampaign(campaignId: number): Promise<void> {
     data: { followUpCount: { increment: 1 } },
   });
 }
+
+export async function checkAndResetDailyLimit(emailAccountId: number) {
+  const account = await prisma.emailAccount.findUnique({
+    where: { id: emailAccountId },
+  });
+  if (!account) return null;
+
+  const now = new Date();
+  const timeSinceReset = now.getTime() - account.sentResetAt.getTime();
+  const twentyFourHours = 24 * 60 * 60 * 1000;
+
+  if (timeSinceReset >= twentyFourHours) {
+    return await prisma.emailAccount.update({
+      where: { id: emailAccountId },
+      data: {
+        dailySent: 0,
+        sentResetAt: now,
+      },
+    });
+  }
+
+  return account;
+}
+
+export async function getEffectiveDailyLimit(account: {
+  dailyLimit: number;
+  warmupStatus: WarmupStatus;
+  warmupDay: number;
+}) {
+  if (account.warmupStatus === WarmupStatus.active) {
+    // Warmup limit: start at 10, increase by 5 each day, cap at dailyLimit
+    return Math.min(account.dailyLimit, 10 + account.warmupDay * 5);
+  }
+  return account.dailyLimit;
+}
+
 
