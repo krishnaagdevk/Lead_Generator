@@ -452,7 +452,7 @@ export function LeadDetailDrawer({ leadId, onClose }: LeadDetailDrawerProps) {
                     </div>
                     <Button
                       size="sm"
-                      variant="outline"
+                      variant="secondary"
                       loading={loadingMockup}
                       onClick={async () => {
                         setLoadingMockup(true);

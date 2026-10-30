@@ -146,47 +146,118 @@ Return ONLY valid JSON.`;
 
 // ── Model Selection Mapping Helper ───────────────────────────────────────────
 
+import { resolveAIModel, getAvailableAIModels } from "./aiConfig";
+
+// ── Model Selection Mapping Helper (Backward-Compatible) ─────────────────────
+
 export function resolveModels(requestedModel?: string): { naraModel: string; groqModel: string } {
-  const NARA_MODELS = process.env.NARA_MODELS
-    ? process.env.NARA_MODELS.split(",").map(m => m.trim())
-    : ["mimo-v2.5-free", "mistral-large", "mistral-medium-3-5", "tencent-hy3"];
-  const GROQ_MODELS = process.env.GROQ_MODELS
-    ? process.env.GROQ_MODELS.split(",").map(m => m.trim())
-    : [
-        "llama-3.1-8b-instant",
-        "llama-3.3-70b-versatile",
-        "openai/gpt-oss-120b",
-        "openai/gpt-oss-20b"
-      ];
+  const { targetModel, provider } = resolveAIModel(requestedModel);
+  return {
+    naraModel: provider === "NaraRouter" ? targetModel : "laguna-s-2.1",
+    groqModel: provider === "Groq" ? targetModel : "openai/gpt-oss-120b",
+  };
+}
 
-  let naraModel = "mistral-large";
-  let groqModel = "llama-3.3-70b-versatile";
+// ── Unified, Fault-Tolerant AI Providers ─────────────────────────────────────
 
-  if (requestedModel) {
-    if (NARA_MODELS.includes(requestedModel)) {
-      naraModel = requestedModel;
-      if (requestedModel === "mimo-v2.5-free") {
-        groqModel = "llama-3.1-8b-instant";
-      } else if (requestedModel === "mistral-medium-3-5") {
-        groqModel = "llama-3.3-70b-versatile";
-      } else if (requestedModel === "tencent-hy3") {
-        groqModel = "llama-3.3-70b-versatile";
+async function callGroqDirect({
+  model,
+  systemPrompt,
+  userPrompt,
+  responseFormatJson,
+  maxTokens = 400,
+  temperature = 0.7,
+}: {
+  model: string;
+  systemPrompt: string;
+  userPrompt: string;
+  responseFormatJson?: boolean;
+  maxTokens?: number;
+  temperature?: number;
+}): Promise<string> {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey) {
+    throw new Error("GROQ_API_KEY is not configured");
+  }
+
+  const groq = new Groq({ apiKey });
+  const completion = await groq.chat.completions.create({
+    model,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    max_tokens: Math.max(maxTokens, 300),
+    temperature,
+    ...(responseFormatJson && { response_format: { type: "json_object" } }),
+  });
+
+  const content = completion.choices?.[0]?.message?.content;
+  if (!content) {
+    throw new Error(`Empty response from Groq model ${model}`);
+  }
+  return content;
+}
+
+async function callNaraRouterDirect({
+  model,
+  systemPrompt,
+  userPrompt,
+  responseFormatJson,
+  maxTokens = 400,
+  temperature = 0.7,
+}: {
+  model: string;
+  systemPrompt: string;
+  userPrompt: string;
+  responseFormatJson?: boolean;
+  maxTokens?: number;
+  temperature?: number;
+}): Promise<string> {
+  const naraRouterBaseUrl = process.env.NARA_ROUTER_URL || "https://router.bynara.id/v1";
+
+  for (let i = 0; i < NARA_KEYS.length; i++) {
+    const key = NARA_KEYS[i];
+    console.log(`[LLM Router] Calling NaraRouter (Key #${i + 1}/${NARA_KEYS.length}, Model: ${model})...`);
+
+    try {
+      const response = await fetch(`${naraRouterBaseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${key}`,
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          max_tokens: maxTokens,
+          temperature,
+          ...(responseFormatJson && { response_format: { type: "json_object" } }),
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const text = data?.choices?.[0]?.message?.content;
+        if (text) {
+          console.log(`[LLM Router] Succeeded via NaraRouter Key #${i + 1}!`);
+          return text;
+        }
       } else {
-        groqModel = "llama-3.3-70b-versatile";
+        const errText = await response.text();
+        console.warn(`[LLM Router] NaraRouter Key #${i + 1} failed (${response.status}): ${errText}`);
       }
-    } else if (GROQ_MODELS.includes(requestedModel)) {
-      groqModel = requestedModel;
-      naraModel = "mistral-large"; // Fallback gateway model if calling NaraRouter first
-    } else {
-      naraModel = requestedModel;
-      groqModel = requestedModel;
+    } catch (err: any) {
+      console.warn(`[LLM Router] NaraRouter Key #${i + 1} exception:`, err.message || err);
     }
   }
 
-  return { naraModel, groqModel };
+  throw new Error("All NaraRouter keys failed");
 }
-
-// ── Unified, Fault-Tolerant AI Routing Client ─────────────────────────────────
 
 export async function callLLM({
   systemPrompt,
@@ -205,51 +276,61 @@ export async function callLLM({
   model?: string;
   isAgent?: boolean;
 }): Promise<string> {
-  const { naraModel } = resolveModels(model);
-  const naraRouterBaseUrl = process.env.NARA_ROUTER_URL || "https://router.naraya.ai/v1";
+  const { targetModel, provider, fallbackModel, fallbackProvider } = resolveAIModel(model);
 
-  // Iterate through NaraRouter rotating API Keys
-  for (let i = 0; i < NARA_KEYS.length; i++) {
-    const key = NARA_KEYS[i];
-    console.log(`[LLM Router] Attempting NaraRouter API call (Key #${i + 1}/${NARA_KEYS.length}, Model: ${naraModel})...`);
-    
-    try {
-      const response = await fetch(`${naraRouterBaseUrl}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${key}`,
-        },
-        body: JSON.stringify({
-          model: naraModel,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-          max_tokens: maxTokens,
-          temperature,
-          ...(responseFormatJson && { response_format: { type: "json_object" } }),
-        }),
-        signal: AbortSignal.timeout(10000), // 10-second strict fail-fast timeout per key
+  console.log(`[LLM Router] Target model: ${targetModel} via ${provider}`);
+
+  // Primary attempt
+  try {
+    if (provider === "Groq") {
+      return await callGroqDirect({
+        model: targetModel,
+        systemPrompt,
+        userPrompt,
+        responseFormatJson,
+        maxTokens,
+        temperature,
       });
-
-      if (response.ok) {
-        const data = await response.json();
-        const text = data?.choices?.[0]?.message?.content;
-        if (text) {
-          console.log(`[LLM Router] Succeeded via NaraRouter Key #${i + 1}!`);
-          return text;
-        }
-      } else {
-        const errText = await response.text();
-        console.warn(`[LLM Router] NaraRouter Key #${i + 1} failed (Status ${response.status}): ${errText}`);
-      }
-    } catch (err: any) {
-      console.warn(`[LLM Router] NaraRouter Key #${i + 1} threw exception: ${err.message || String(err)}`);
+    } else {
+      return await callNaraRouterDirect({
+        model: targetModel,
+        systemPrompt,
+        userPrompt,
+        responseFormatJson,
+        maxTokens,
+        temperature,
+      });
     }
+  } catch (primaryErr: any) {
+    console.warn(`[LLM Router] Primary provider (${provider}) failed: ${primaryErr.message}. Attempting fallback to ${fallbackProvider} (${fallbackModel})...`);
   }
 
-  throw new Error("[LLM Router] Total service outage: All NaraRouter keys failed. No other fallback providers are configured.");
+  // Fallback attempt
+  try {
+    if (fallbackProvider === "Groq" && process.env.GROQ_API_KEY) {
+      return await callGroqDirect({
+        model: fallbackModel,
+        systemPrompt,
+        userPrompt,
+        responseFormatJson,
+        maxTokens,
+        temperature,
+      });
+    } else {
+      return await callNaraRouterDirect({
+        model: fallbackModel,
+        systemPrompt,
+        userPrompt,
+        responseFormatJson,
+        maxTokens,
+        temperature,
+      });
+    }
+  } catch (fallbackErr: any) {
+    console.error(`[LLM Router] Fallback provider (${fallbackProvider}) also failed:`, fallbackErr.message || fallbackErr);
+  }
+
+  throw new Error("[LLM Router] Total service outage: Both primary and fallback AI providers failed.");
 }
 
 // ── Refactored Copywriting & Analysis Endpoints ───────────────────────────────

@@ -112,7 +112,7 @@ export default function ComposePage() {
   const [gmailAddress, setGmailAddress] = useState<string>("");
   const [campaignName, setCampaignName] = useState("");
   const [isSequence, setIsSequence] = useState(false);
-  const [selectedModel, setSelectedModel] = useState("mistral-large");
+  const [selectedModel, setSelectedModel] = useState("laguna-s-2.1");
 
   // New Lead selection filters
   const [leadSearch, setLeadSearch] = useState("");
@@ -122,6 +122,21 @@ export default function ComposePage() {
   // Draft filters
   const [draftSearch, setDraftSearch] = useState("");
   const [draftStatusFilter, setDraftStatusFilter] = useState("all");
+
+  // Dynamic AI Models Query (Market-Standard Config-Driven Architecture)
+  const { data: aiModelsData } = useQuery<{
+    defaultModel: string;
+    models: Array<{ id: string; name: string; provider: string; isDefault?: boolean }>;
+  }>({
+    queryKey: ["ai-models"],
+    queryFn: () => fetch("/api/ai/models").then((r) => r.json()),
+  });
+
+  useEffect(() => {
+    if (aiModelsData?.defaultModel && (!selectedModel || selectedModel === "mistral-large")) {
+      setSelectedModel(aiModelsData.defaultModel);
+    }
+  }, [aiModelsData, selectedModel]);
 
   // Queries
   const { data: leadsData } = useQuery({
@@ -324,7 +339,7 @@ export default function ComposePage() {
   return (
     <div className="flex flex-col lg:flex-row h-[calc(100vh-3.5rem)] lg:h-screen overflow-hidden bg-slate-50">
       {/* Sidebar Panel: Create or List Campaigns */}
-      <div className="w-full lg:w-[360px] shrink-0 border-b lg:border-b-0 lg:border-r border-slate-200 bg-white flex flex-col h-[45vh] lg:h-full shadow-sm z-10">
+      <div className="w-full lg:w-90 shrink-0 border-b lg:border-b-0 lg:border-r border-slate-200 bg-white flex flex-col h-[45vh] lg:h-full shadow-sm z-10">
         <div className="p-4 border-b border-slate-100 flex flex-col gap-3 shrink-0">
           <div className="flex items-center justify-between">
             <h1 className="text-lg font-bold text-slate-800 flex items-center gap-2">
@@ -392,7 +407,7 @@ export default function ComposePage() {
 
                 {accounts && accounts.length > 0 && (
                   <div>
-                    <label className="text-xs font-semibold text-slate-500 block mb-1 font-medium">Send From Account</label>
+                    <label className="text-xs font-semibold text-slate-500 block mb-1">Send From Account</label>
                     <select
                       className="w-full h-10 rounded-lg border border-slate-200 px-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 bg-white cursor-pointer"
                       value={emailAccountId ?? ""}
@@ -409,7 +424,7 @@ export default function ComposePage() {
                 )}
 
                 <div>
-                  <label className="text-xs font-semibold text-slate-500 block mb-1 font-medium">
+                  <label className="text-xs font-semibold text-slate-500 block mb-1">
                     Or Enter Connected Gmail Address
                   </label>
                   <input
@@ -607,7 +622,7 @@ export default function ComposePage() {
             {/* Active Campaign Header & Summary Stats */}
             <div className="p-3 bg-white border-b border-slate-200">
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold text-slate-800 truncate max-w-[180px]">
+                <span className="text-xs font-bold text-slate-800 truncate max-w-45">
                   📁 {activeCampaignDetails?.name}
                 </span>
                 <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded-full font-bold">
@@ -648,7 +663,7 @@ export default function ComposePage() {
                 <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Sending email:</span>
                   <select
-                    className="h-7 text-xs rounded border border-slate-200 px-1.5 font-semibold bg-white cursor-pointer max-w-[170px]"
+                    className="h-7 text-xs rounded border border-slate-200 px-1.5 font-semibold bg-white cursor-pointer max-w-42.5"
                     value={activeCampaignDetails?.emailAccountId ?? ""}
                     onChange={e => updateCampaignAccount.mutate(Number(e.target.value))}
                   >
@@ -773,18 +788,28 @@ export default function ComposePage() {
                 onChange={(e) => setSelectedModel(e.target.value)}
                 className="w-full h-9 px-2.5 text-xs font-bold border border-slate-200 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500/40 bg-slate-50 text-slate-700 cursor-pointer shadow-sm hover:bg-slate-100/50 transition-colors"
               >
-                <optgroup label="NaraRouter (Primary)">
-                  <option value="mistral-large">Mistral Large (High Quality)</option>
-                  <option value="mimo-v2.5-free">Mimo v2.5 (Fast & Free)</option>
-                  <option value="mistral-medium-3-5">Mistral Medium 3.5</option>
-                  <option value="tencent-hy3">Tencent HY3</option>
-                </optgroup>
-                <optgroup label="Groq Fallback">
-                  <option value="llama-3.3-70b-versatile">Llama 3.3 70B (Versatile)</option>
-                  <option value="llama-3.1-8b-instant">Llama 3.1 8B (Instant)</option>
-                  <option value="openai/gpt-oss-120b">GPT OSS 120B (Enterprise)</option>
-                  <option value="openai/gpt-oss-20b">GPT OSS 20B</option>
-                </optgroup>
+                {aiModelsData?.models && aiModelsData.models.length > 0 ? (
+                  Object.entries(
+                    aiModelsData.models.reduce((acc, m) => {
+                      acc[m.provider] = acc[m.provider] || [];
+                      acc[m.provider].push(m);
+                      return acc;
+                    }, {} as Record<string, typeof aiModelsData.models>)
+                  ).map(([provider, models]) => (
+                    <optgroup key={provider} label={provider}>
+                      {models.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))
+                ) : (
+                  <optgroup label="Default Engine">
+                    <option value="laguna-s-2.1">Laguna S-2.1 (Fast & Smart)</option>
+                    <option value="openai/gpt-oss-120b">GPT OSS 120B (Enterprise Intelligence)</option>
+                  </optgroup>
+                )}
               </select>
             </div>
             <div className="grid grid-cols-2 gap-2">
@@ -800,7 +825,7 @@ export default function ComposePage() {
               <Button
                 variant="cta"
                 size="sm"
-                className="h-10 text-xs font-bold shadow-md bg-gradient-to-r from-primary to-indigo-600 text-white flex items-center justify-center gap-1.5 cursor-pointer hover:opacity-95"
+                className="h-10 text-xs font-bold shadow-md bg-linear-to-r from-primary to-indigo-600 text-white flex items-center justify-center gap-1.5 cursor-pointer hover:opacity-95"
                 onClick={() => sendAll.mutate()}
                 loading={sendAll.isPending}
                 disabled={activeCampaignDetails?.status === "running"}
@@ -1061,7 +1086,7 @@ function DraftEditor({
               <Button
                 variant="cta"
                 size="sm"
-                className="h-8 text-xs font-bold gap-1 shadow bg-gradient-to-r from-primary to-indigo-600 text-white cursor-pointer"
+                className="h-8 text-xs font-bold gap-1 shadow bg-linear-to-r from-primary to-indigo-600 text-white cursor-pointer"
                 onClick={handleSendViaGmail}
                 loading={sending}
               >
@@ -1136,7 +1161,7 @@ function DraftEditor({
             </div>
             <textarea
               id="draft-body-textarea"
-              className="flex-1 w-full rounded-lg border border-slate-200 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 bg-white resize-none font-normal leading-relaxed text-slate-700 min-h-[220px]"
+              className="flex-1 w-full rounded-lg border border-slate-200 px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 bg-white resize-none font-normal leading-relaxed text-slate-700 min-h-55"
               value={body}
               onChange={e => setBody(e.target.value)}
               placeholder="Start drafting..."
@@ -1203,7 +1228,7 @@ function DraftEditor({
                   {draft.lead.category && (
                     <div className="flex justify-between py-1 border-b border-slate-50">
                       <span className="text-slate-500 font-semibold">Category</span>
-                      <span className="font-semibold text-slate-700 truncate max-w-[170px]">{draft.lead.category}</span>
+                      <span className="font-semibold text-slate-700 truncate max-w-42.5">{draft.lead.category}</span>
                     </div>
                   )}
                   {draft.lead.rating && (
@@ -1222,7 +1247,7 @@ function DraftEditor({
                         href={draft.lead.websiteUrl}
                         target="_blank"
                         rel="noreferrer"
-                        className="text-primary hover:underline font-semibold flex items-center gap-0.5 truncate max-w-[170px]"
+                        className="text-primary hover:underline font-semibold flex items-center gap-0.5 truncate max-w-42.5"
                       >
                         <Globe className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                         {draft.lead.websiteUrl}

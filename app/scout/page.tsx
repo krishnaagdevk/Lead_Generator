@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/leads/StatusBadge";
 import { LeadDetailDrawer } from "@/components/leads/LeadDetailDrawer";
 import Link from "next/link";
+import { motion, AnimatePresence } from "framer-motion";
 
 interface Lead {
   id: number;
@@ -354,7 +355,7 @@ export default function ScoutPage() {
                     <CheckCircle2 className="w-4 h-4" /> Log Physical Visit (+10 XP)
                   </Button>
                   <Button
-                    variant="outline"
+                    variant="primary"
                     onClick={() => setDrawerLeadId(selectedLead.id)}
                     className="w-full h-10 font-bold text-xs border-slate-800 hover:bg-slate-800 text-slate-300 cursor-pointer flex items-center justify-center gap-1.5"
                   >

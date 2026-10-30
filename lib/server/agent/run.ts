@@ -9,7 +9,7 @@ const MAX_STEPS = 60;
 const STEP_DELAY = 2; // seconds between agent iterations
 const WAIT_DELAY = 5; // seconds while a search job is still processing
 // ponytail: model is read from env so it can be swapped without code changes
-const AGENT_MODEL = process.env.AGENT_MODEL || "mistral-large";
+const AGENT_MODEL = process.env.DEFAULT_AI_MODEL || process.env.AGENT_MODEL || "laguna-s-2.1";
 
 const SYSTEM_PROMPT = `You are LeadHunter's autonomous lead-generation agent. You take a high-level goal from the user and run the Search -> Enrich -> Score pipeline for them.
 

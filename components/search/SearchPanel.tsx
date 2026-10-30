@@ -67,28 +67,59 @@ export function SearchPanel() {
   const [citySuggestions, setCitySuggestions] = useState<string[]>([]);
   const [showCitySuggestions, setShowCitySuggestions] = useState(false);
 
-  const fetchCitySuggestions = (input: string) => {
+  const fetchCitySuggestions = async (input: string) => {
     if (!input.trim()) {
       setCitySuggestions([]);
       return;
     }
-    if (typeof window !== "undefined" && window.google?.maps?.places) {
-      if (!autocompleteService.current) {
-        autocompleteService.current = new window.google.maps.places.AutocompleteService();
-      }
-      autocompleteService.current.getPlacePredictions(
-        {
+    if (typeof window === "undefined" || !window.google?.maps?.places) {
+      return;
+    }
+
+    const places = window.google.maps.places as any;
+
+    // Use recommended Google Maps AutocompleteSuggestion (Places API New)
+    if (places.AutocompleteSuggestion?.fetchAutocompleteSuggestions) {
+      try {
+        const response = await places.AutocompleteSuggestion.fetchAutocompleteSuggestions({
           input,
-          types: ["(regions)"],
-        },
-        (predictions: any, status: any) => {
-          if (status === window.google.maps.places.PlacesServiceStatus.OK && predictions) {
-            setCitySuggestions(predictions.map((p: any) => p.description));
-          } else {
-            setCitySuggestions([]);
-          }
+          includedPrimaryTypes: ["(regions)"],
+        });
+
+        if (response?.suggestions && Array.isArray(response.suggestions)) {
+          const formatted = response.suggestions
+            .map((s: any) => s.placePrediction?.text?.toString() || s.placePrediction?.mainText?.toString())
+            .filter(Boolean);
+          setCitySuggestions(formatted);
+          return;
         }
-      );
+      } catch (err) {
+        console.warn("AutocompleteSuggestion failed, falling back to legacy service:", err);
+      }
+    }
+
+    // Graceful fallback to legacy AutocompleteService if new API is not available
+    try {
+      if (!autocompleteService.current && places.AutocompleteService) {
+        autocompleteService.current = new places.AutocompleteService();
+      }
+      if (autocompleteService.current) {
+        autocompleteService.current.getPlacePredictions(
+          {
+            input,
+            types: ["(regions)"],
+          },
+          (predictions: any, status: any) => {
+            if (status === places.PlacesServiceStatus?.OK && predictions) {
+              setCitySuggestions(predictions.map((p: any) => p.description));
+            } else {
+              setCitySuggestions([]);
+            }
+          }
+        );
+      }
+    } catch {
+      setCitySuggestions([]);
     }
   };
 

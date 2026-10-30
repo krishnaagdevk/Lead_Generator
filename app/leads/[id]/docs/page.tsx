@@ -315,7 +315,7 @@ export default function DocsPage() {
             {/* Actions */}
             <div className="flex justify-end gap-3 mt-4 pt-4 border-t">
               <Button
-                variant="outline"
+                variant="secondary"
                 loading={saving}
                 onClick={() => handleSave(false)}
                 className="font-bold text-xs h-10 px-5 cursor-pointer"
