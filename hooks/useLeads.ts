@@ -32,6 +32,33 @@ function updateLeadsCache(qc: any, updater: (leads: Lead[]) => Lead[]) {
   });
 }
 
+// Helper to locally filter leads so placeholderData matches active query filters
+function filterLeadsLocally(leads: Lead[], queryString: string): Lead[] {
+  if (!queryString) return leads;
+  try {
+    const sp = new URLSearchParams(queryString);
+    const websiteStatus = sp.get("websiteStatus");
+    const hasEmail = sp.get("hasEmail");
+    const minRating = sp.get("minRating") ? Number(sp.get("minRating")) : undefined;
+    const minScore = sp.get("minScore") ? Number(sp.get("minScore")) : undefined;
+    const pipelineStage = sp.get("pipelineStage");
+    const category = sp.get("category");
+
+    return leads.filter((l) => {
+      if (websiteStatus && l.websiteStatus !== websiteStatus) return false;
+      if (hasEmail === "true" && !l.email) return false;
+      if (hasEmail === "false" && l.email) return false;
+      if (minRating !== undefined && (l.rating ?? 0) < minRating) return false;
+      if (minScore !== undefined && (l.leadScore ?? 0) < minScore) return false;
+      if (pipelineStage && l.pipelineStage !== pipelineStage) return false;
+      if (category && l.category && !l.category.toLowerCase().includes(category.toLowerCase())) return false;
+      return true;
+    });
+  } catch {
+    return leads;
+  }
+}
+
 export function useLeadsQuery(queryString = "") {
   const qc = useQueryClient();
   const [localData, setLocalData] = useState<Lead[] | null>(null);
@@ -60,8 +87,8 @@ export function useLeadsQuery(queryString = "") {
       }
       return data;
     },
-    // Use IndexedDB data as placeholder data
-    placeholderData: localData ? { items: localData } : undefined,
+    // Use filtered IndexedDB data as placeholder data so old unfiltered leads never flash
+    placeholderData: localData ? { items: filterLeadsLocally(localData, queryString) } : undefined,
   });
 
   return query;

@@ -5,7 +5,7 @@ import { FilterBar } from "@/components/leads/FilterBar";
 import { ExportMenu } from "@/components/leads/ExportMenu";
 import { LeadDetailDrawer } from "@/components/leads/LeadDetailDrawer";
 import { useLeadsQuery, useOfflineDeleteLead, useOfflineBulkDeleteLeads } from "@/hooks/useLeads";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useToast } from "@/components/ui/Toast";
 
 interface Filters {
@@ -34,7 +34,7 @@ export default function LeadsPage() {
   if (filters.sortBy) params.set("sortBy", filters.sortBy);
   if (filters.pipelineStage) params.set("pipelineStage", filters.pipelineStage);
 
-  const { data, isLoading } = useLeadsQuery(params.toString());
+  const { data, isLoading, isFetching } = useLeadsQuery(params.toString());
 
   const deleteOneMutation = useOfflineDeleteLead();
   const bulkDeleteMutation = useOfflineBulkDeleteLeads();
@@ -59,7 +59,20 @@ export default function LeadsPage() {
   const fetchedLeads = data?.items ?? [];
   const uniqueCategories = Array.from(new Set(fetchedLeads.map((l: any) => l.category).filter(Boolean))).sort() as string[];
   
-  const allLeads = fetchedLeads.filter((l: any) => !filters.category || l.category === filters.category);
+  // Instant, zero-latency in-memory filtering: never displays old/unfiltered leads while query syncs
+  const allLeads = useMemo(() => {
+    return fetchedLeads.filter((l: any) => {
+      if (filters.websiteStatus && l.websiteStatus !== filters.websiteStatus) return false;
+      if (filters.hasEmail === true && !l.email) return false;
+      if (filters.hasEmail === false && l.email) return false;
+      if (filters.minRating && (l.rating ?? 0) < filters.minRating) return false;
+      if (filters.minScore && (l.leadScore ?? 0) < filters.minScore) return false;
+      if (filters.pipelineStage && l.pipelineStage !== filters.pipelineStage) return false;
+      if (filters.category && l.category !== filters.category) return false;
+      return true;
+    });
+  }, [fetchedLeads, filters]);
+
   const totalLeads = allLeads.length;
   const paginatedLeads = pageSize === "all" ? allLeads : allLeads.slice((page - 1) * pageSize, page * pageSize);
 
@@ -125,7 +138,13 @@ export default function LeadsPage() {
 
       <FilterBar filters={filters} categories={uniqueCategories} onChange={(f) => { setFilters(f); setPage(1); }} />
 
-      <div className="flex-1 overflow-auto">
+      <div className="flex-1 overflow-auto relative">
+        {/* Subtle background sync indicator */}
+        {isFetching && !isLoading && (
+          <div className="absolute top-0 left-0 right-0 h-0.5 bg-primary/20 overflow-hidden z-20 pointer-events-none">
+            <div className="h-full bg-primary animate-pulse w-full" />
+          </div>
+        )}
         <LeadsTable
           leads={paginatedLeads}
           loading={isLoading}

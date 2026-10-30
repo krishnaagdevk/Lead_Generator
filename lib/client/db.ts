@@ -8,6 +8,9 @@ export interface Lead {
   bestContact: string | null;
   pipelineStage: string;
   dealValue: number | null;
+  rating?: number | null;
+  reviewCount?: number | null;
+  leadScore?: number | null;
   notes?: string | null;
   createdAt: string;
 }
