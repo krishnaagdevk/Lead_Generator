@@ -2,12 +2,13 @@
 
 import { useState } from "react";
 import { cn } from "@/lib/utils";
-import { BarChart3, BookOpen, Bot, Layers, LogOut, Mail, Map, Settings, Users, Menu, X, Compass, Trophy } from "lucide-react";
+import { BarChart3, BookOpen, Bot, Layers, LogOut, Mail, Map, Settings, Users, Menu, X, Compass, Trophy, Rocket } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
 const NAV = [
   { href: "/search",    icon: Map,       label: "Search" },
+  { href: "/startups",  icon: Rocket,    label: "Startups" },
   { href: "/agent",     icon: Bot,       label: "Agent" },
   { href: "/leads",     icon: Users,     label: "Leads" },
   { href: "/scout",     icon: Compass,   label: "Street-Scout" },
