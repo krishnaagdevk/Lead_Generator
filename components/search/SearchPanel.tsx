@@ -216,10 +216,18 @@ export function SearchPanel() {
     },
   });
 
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
+
   useEffect(() => {
     if (jobStatus?.status === "done" && !jobStatus?.error) {
       qc.invalidateQueries({ queryKey: ["leads"] });
       router.push("/leads");
+    } else if (jobStatus?.status === "failed") {
+      toastRef.current({
+        message: jobStatus.error || "Search job encountered an error. Please try again.",
+        type: "error",
+      });
     }
   }, [jobStatus?.status, jobStatus?.error, qc, router]);
 
@@ -534,10 +542,10 @@ export function SearchPanel() {
             </div>
           )}
 
-          {jobStatus?.status === "done" && jobStatus?.error && (
+          {(jobStatus?.status === "failed" || jobStatus?.error) && (
             <div className="flex items-start gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-3">
               <AlertCircle className="w-4.5 h-4.5 shrink-0 text-amber-500 mt-0.5" />
-              <span>{jobStatus.error}</span>
+              <span>{jobStatus.error || "Search failed. Please try a different location or business type."}</span>
             </div>
           )}
 

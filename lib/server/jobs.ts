@@ -24,8 +24,8 @@ import { verifyEmail } from "./verification";
 import { calculateScore } from "./scoring";
 
 type GeoQuery =
-  | { mode: "radius"; lat: number; lng: number; radius_km: number }
-  | { mode: "polygon"; coords: Array<{ lat: number; lng: number }> }
+  | { mode: "radius"; lat?: number; lng?: number; radius_km?: number; radius?: number; center?: { lat: number; lng: number } }
+  | { mode: "polygon"; coords?: Array<{ lat: number; lng: number }>; polygon?: Array<{ lat: number; lng: number }> }
   | { mode: "city"; city: string; country?: string }
   | { mode: "multi_city"; cities: string[]; country?: string };
 
@@ -43,27 +43,36 @@ export async function runSearchJob(jobId: number): Promise<void> {
 
 
 
-    const gq = job.geoQuery as GeoQuery;
+    const gq = (job.geoQuery || {}) as GeoQuery;
     let rawPlaces: unknown[] = [];
 
     if (gq.mode === "radius") {
-      rawPlaces = await searchNearby(job.businessType, gq.lat, gq.lng, gq.radius_km * 1000);
+      const lat = typeof gq.lat === "number" ? gq.lat : gq.center?.lat ?? 28.6139;
+      const lng = typeof gq.lng === "number" ? gq.lng : gq.center?.lng ?? 77.2090;
+      const km = typeof gq.radius_km === "number" ? gq.radius_km : (typeof gq.radius === "number" ? gq.radius : 5);
+      rawPlaces = await searchNearby(job.businessType, lat, lng, km * 1000);
     } else if (gq.mode === "polygon") {
-      const centLat = gq.coords.reduce((s, c) => s + c.lat, 0) / gq.coords.length;
-      const centLng = gq.coords.reduce((s, c) => s + c.lng, 0) / gq.coords.length;
-      const all = await searchNearby(job.businessType, centLat, centLng, 15000);
-      rawPlaces = all.filter((p) => {
-        const loc = (p as { geometry?: { location?: { lat: number; lng: number } } }).geometry?.location;
-        return loc ? pointInPolygon(loc.lat, loc.lng, gq.coords) : false;
-      });
+      const coords = gq.coords || gq.polygon || [];
+      if (coords.length > 0) {
+        const centLat = coords.reduce((s, c) => s + c.lat, 0) / coords.length;
+        const centLng = coords.reduce((s, c) => s + c.lng, 0) / coords.length;
+        const all = await searchNearby(job.businessType, centLat, centLng, 15000);
+        rawPlaces = all.filter((p) => {
+          const loc = (p as { geometry?: { location?: { lat: number; lng: number } } }).geometry?.location;
+          return loc ? pointInPolygon(loc.lat, loc.lng, coords) : false;
+        });
+      }
     } else if (gq.mode === "city") {
-      const latLng = await cityToLatLng(gq.city, gq.country ?? "US");
+      const city = gq.city || "";
+      const country = gq.country ?? "US";
+      const latLng = await cityToLatLng(city, country);
       rawPlaces = latLng
         ? await searchNearby(job.businessType, latLng[0], latLng[1], 10000)
-        : await searchText(job.businessType, `${gq.city}, ${gq.country ?? "US"}`);
+        : await searchText(job.businessType, country ? `${city}, ${country}` : city);
     } else if (gq.mode === "multi_city") {
       const seen = new Set<string>();
-      for (const city of gq.cities) {
+      const cities = Array.isArray(gq.cities) ? gq.cities : [];
+      for (const city of cities) {
         const latLng = await cityToLatLng(city, gq.country ?? "US");
         const places = latLng
           ? await searchNearby(job.businessType, latLng[0], latLng[1], 10000)

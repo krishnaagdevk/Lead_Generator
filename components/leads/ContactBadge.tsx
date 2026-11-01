@@ -1,4 +1,4 @@
-import { Mail, Phone, Apple, Play, MessageCircle } from "lucide-react";
+import { Mail, Phone, Apple, Play, MessageCircle, CheckCircle2, AlertCircle, HelpCircle } from "lucide-react";
 
 interface ContactBadgeProps {
   email?: string | null;
@@ -42,55 +42,63 @@ export function ContactBadge({ email, phone, socialLinks, emailVerifiedStatus }:
   const hasSocial = socialLinks && Object.keys(socialLinks).length > 0;
 
   return (
-    <div className="flex flex-col gap-1.5 py-1">
+    <div className="flex flex-col gap-1.5 py-0.5">
       {email && (
-        <div className="flex flex-col gap-0.5">
+        <div className="flex items-center gap-1.5">
           <a
             href={`mailto:${email}`}
             title={email}
-            className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 hover:underline transition-colors duration-150"
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1.5 text-xs text-indigo-700 bg-indigo-50/80 hover:bg-indigo-100/90 border border-indigo-200/60 px-2 py-0.5 rounded-md transition-colors font-medium max-w-[210px] truncate"
           >
-            <Mail className="w-3.5 h-3.5 text-blue-500 shrink-0" />
-            <span className="truncate max-w-[170px] font-medium">{email}</span>
+            <Mail className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+            <span className="truncate">{email}</span>
           </a>
-          {emailVerifiedStatus && emailVerifiedStatus !== "unverified" && (
-            <span className="inline-flex items-center gap-1 text-[10px] font-semibold pl-5">
-              {emailVerifiedStatus === "valid" ? (
-                <span className="text-emerald-600 flex items-center gap-0.5">● Valid</span>
-              ) : emailVerifiedStatus === "invalid" ? (
-                <span className="text-red-600 flex items-center gap-0.5">● Invalid</span>
-              ) : emailVerifiedStatus === "catchall" ? (
-                <span className="text-amber-600 flex items-center gap-0.5">● Risky</span>
-              ) : null}
+          {emailVerifiedStatus === "valid" && (
+            <span title="Verified email" className="text-emerald-600">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+            </span>
+          )}
+          {emailVerifiedStatus === "catchall" && (
+            <span title="Risky / Catch-all email" className="text-amber-500">
+              <HelpCircle className="w-3.5 h-3.5" />
+            </span>
+          )}
+          {emailVerifiedStatus === "invalid" && (
+            <span title="Invalid email" className="text-rose-500">
+              <AlertCircle className="w-3.5 h-3.5" />
             </span>
           )}
         </div>
       )}
+
       {phone && (
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           <a
             href={`tel:${phone}`}
             title={phone}
-            className="inline-flex items-center gap-1.5 text-xs text-green-600 hover:text-green-800 hover:underline transition-colors duration-150"
+            onClick={(e) => e.stopPropagation()}
+            className="inline-flex items-center gap-1 text-xs text-slate-700 hover:text-slate-900 font-medium hover:underline"
           >
-            <Phone className="w-3.5 h-3.5 text-green-500 shrink-0" />
-            <span className="font-medium">{phone}</span>
+            <Phone className="w-3 h-3 text-slate-400 shrink-0" />
+            <span>{phone}</span>
           </a>
-          <span className="text-muted/30">|</span>
           <a
             href={`https://wa.me/${phone.replace(/[^0-9]/g, "")}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600 hover:text-emerald-800 hover:underline transition-colors duration-150 cursor-pointer"
-            title="Send WhatsApp Message"
+            onClick={(e) => e.stopPropagation()}
+            title="Chat on WhatsApp"
+            className="inline-flex items-center gap-0.5 text-[10px] font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200/60 px-1.5 py-0.5 rounded transition-colors"
           >
-            <MessageCircle className="w-3 h-3 text-emerald-500" />
-            WhatsApp
+            <MessageCircle className="w-2.5 h-2.5 text-emerald-600" />
+            WA
           </a>
         </div>
       )}
+
       {hasSocial && (
-        <div className="flex flex-col gap-1.5">
+        <div className="flex items-center gap-1.5 pt-0.5">
           {Object.entries(socialLinks).map(([platform, url]) => {
             if (platform === "playStore") {
               return (
@@ -99,10 +107,11 @@ export function ContactBadge({ email, phone, socialLinks, emailVerifiedStatus }:
                   href={url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-xs text-emerald-600 hover:text-emerald-800 hover:underline transition-colors duration-150"
+                  onClick={(e) => e.stopPropagation()}
+                  title="Google Play App"
+                  className="p-1 rounded text-emerald-600 hover:bg-emerald-50 transition-colors"
                 >
-                  <Play className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                  <span className="font-medium">Google Play App</span>
+                  <Play className="w-3.5 h-3.5" />
                 </a>
               );
             }
@@ -113,10 +122,11 @@ export function ContactBadge({ email, phone, socialLinks, emailVerifiedStatus }:
                   href={url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-xs text-gray-700 hover:text-gray-900 hover:underline transition-colors duration-150"
+                  onClick={(e) => e.stopPropagation()}
+                  title="App Store App"
+                  className="p-1 rounded text-slate-700 hover:bg-slate-100 transition-colors"
                 >
-                  <Apple className="w-3.5 h-3.5 text-gray-600 shrink-0" />
-                  <span className="font-medium">App Store App</span>
+                  <Apple className="w-3.5 h-3.5" />
                 </a>
               );
             }
@@ -127,10 +137,11 @@ export function ContactBadge({ email, phone, socialLinks, emailVerifiedStatus }:
                   href={url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-xs text-blue-700 hover:text-blue-900 hover:underline transition-colors duration-150"
+                  onClick={(e) => e.stopPropagation()}
+                  title="Facebook"
+                  className="p-1 rounded text-blue-600 hover:bg-blue-50 transition-colors"
                 >
-                  <FacebookIcon className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                  <span className="font-medium">Facebook</span>
+                  <FacebookIcon className="w-3.5 h-3.5" />
                 </a>
               );
             }
@@ -141,10 +152,11 @@ export function ContactBadge({ email, phone, socialLinks, emailVerifiedStatus }:
                   href={url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-xs text-pink-600 hover:text-pink-800 hover:underline transition-colors duration-150"
+                  onClick={(e) => e.stopPropagation()}
+                  title="Instagram"
+                  className="p-1 rounded text-pink-600 hover:bg-pink-50 transition-colors"
                 >
-                  <InstagramIcon className="w-3.5 h-3.5 text-pink-500 shrink-0" />
-                  <span className="font-medium">Instagram</span>
+                  <InstagramIcon className="w-3.5 h-3.5" />
                 </a>
               );
             }
@@ -152,8 +164,9 @@ export function ContactBadge({ email, phone, socialLinks, emailVerifiedStatus }:
           })}
         </div>
       )}
+
       {!email && !phone && !hasSocial && (
-        <span className="text-xs text-muted/60 font-medium">No contact info</span>
+        <span className="text-[11px] text-slate-400 font-medium">No contact info</span>
       )}
     </div>
   );

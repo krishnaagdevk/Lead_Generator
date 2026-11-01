@@ -33,11 +33,14 @@ export async function searchNearbySerpAPI(
     return [];
   }
 
+  const safeLat = typeof lat === "number" && !Number.isNaN(lat) ? lat : 28.6139;
+  const safeLng = typeof lng === "number" && !Number.isNaN(lng) ? lng : 77.2090;
+
   try {
     const params = new URLSearchParams({
       engine: "google_maps",
       q: businessType,
-      ll: `@${lat},${lng},14z`,
+      ll: `@${safeLat},${safeLng},14z`,
       type: "search",
       api_key: SERPAPI_KEY,
     });
@@ -62,8 +65,8 @@ export async function searchNearbySerpAPI(
       user_ratings_total: item.reviews,
       geometry: {
         location: {
-          lat: item.gps_coordinates?.latitude ?? lat,
-          lng: item.gps_coordinates?.longitude ?? lng,
+          lat: item.gps_coordinates?.latitude ?? safeLat,
+          lng: item.gps_coordinates?.longitude ?? safeLng,
         },
       },
     }));
@@ -79,7 +82,11 @@ export async function searchNearby(
   lng: number,
   radiusM: number
 ): Promise<unknown[]> {
-  const cacheKey = `nearby:${businessType.toLowerCase().trim()}:${lat.toFixed(6)}:${lng.toFixed(6)}:${radiusM}`;
+  const safeLat = typeof lat === "number" && !Number.isNaN(lat) ? lat : 28.6139;
+  const safeLng = typeof lng === "number" && !Number.isNaN(lng) ? lng : 77.2090;
+  const safeRadius = typeof radiusM === "number" && !Number.isNaN(radiusM) && radiusM > 0 ? radiusM : 5000;
+
+  const cacheKey = `nearby:${businessType.toLowerCase().trim()}:${safeLat.toFixed(6)}:${safeLng.toFixed(6)}:${safeRadius}`;
   const cached = await getPlacesCache(cacheKey);
   if (cached && Array.isArray(cached)) {
     return cached;
@@ -90,12 +97,12 @@ export async function searchNearby(
     if (!PLACES_KEY) throw new Error("Google Places key not set");
     results = await fetchPages(`${BASE}/nearbysearch/json`, {
       keyword: businessType,
-      location: `${lat},${lng}`,
-      radius: String(radiusM),
+      location: `${safeLat},${safeLng}`,
+      radius: String(safeRadius),
     });
   } catch (err) {
     console.warn(`Google Places search failed, falling back to SerpAPI:`, err);
-    results = await searchNearbySerpAPI(businessType, lat, lng);
+    results = await searchNearbySerpAPI(businessType, safeLat, safeLng);
   }
 
   if (results.length > 0) {

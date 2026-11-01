@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
     const { businessType, geoQuery } = validation.data;
 
     const job = await prisma.searchJob.create({
-      data: { userId: tenantId, businessType, geoQuery },
+      data: { userId: tenantId, businessType, geoQuery: geoQuery as any },
     });
 
     // Enqueue job to run in background reliably

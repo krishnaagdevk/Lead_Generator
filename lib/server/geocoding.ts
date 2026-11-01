@@ -1,11 +1,28 @@
-const GEO_KEY = process.env.GOOGLE_GEOCODING_API_KEY || "";
+const getGeoKey = () =>
+  process.env.GOOGLE_GEOCODING_API_KEY ||
+  process.env.GOOGLE_PLACES_API_KEY ||
+  process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY ||
+  "";
 
 export async function cityToLatLng(city: string, country = "US"): Promise<[number, number] | null> {
-  const params = new URLSearchParams({ address: `${city}, ${country}`, key: GEO_KEY });
-  const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?${params}`);
-  const data = await res.json() as { results?: Array<{ geometry: { location: { lat: number; lng: number } } }> };
-  const loc = data.results?.[0]?.geometry.location;
-  return loc ? [loc.lat, loc.lng] : null;
+  const key = getGeoKey();
+  if (!key || !city?.trim()) return null;
+
+  try {
+    const address = country ? `${city.trim()}, ${country.trim()}` : city.trim();
+    const params = new URLSearchParams({ address, key });
+    const res = await fetch(`https://maps.googleapis.com/maps/api/geocode/json?${params}`);
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      results?: Array<{ geometry: { location: { lat: number; lng: number } } }>;
+      status?: string;
+    };
+    const loc = data.results?.[0]?.geometry?.location;
+    return loc ? [loc.lat, loc.lng] : null;
+  } catch (err) {
+    console.warn(`Geocoding failed for ${city}:`, err);
+    return null;
+  }
 }
 
 export function pointInPolygon(lat: number, lng: number, polygon: Array<{ lat: number; lng: number }>): boolean {
